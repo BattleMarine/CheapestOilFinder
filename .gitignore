@@ -1,0 +1,58 @@
+# Android / Gradle
+.gradle/
+build/
+**/build/
+**/.gradle/
+.cxx/
+.externalNativeBuild/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Local SDK / machine-specific files
+local.properties
+captures/
+
+# Build outputs
+*.apk
+*.aab
+*.aar
+*.dex
+*.class
+app/build/
+build/
+
+# Debug artifacts created during local verification
+shot*.png
+*shot.png
+ui.xml
+ui2.xml
+window_dump.xml
+current_after_fix.png
+aftertap.png
+mainshot.png
+
+# Reports and temporary logs
+*.log
+*.tmp
+
+# Signing and release secrets
+keystore.properties
+signing/
+signing/*.jks
+signing/*.keystore
+
+# Local secret store
+secrets/*.txt
+secrets/*.properties
+secrets/*.key
+secrets/*.jks
+!secrets/*.example
+!secrets/README.md
+
+# OS files
+.DS_Store
+Thumbs.db
