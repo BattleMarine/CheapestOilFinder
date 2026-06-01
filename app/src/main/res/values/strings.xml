@@ -2,25 +2,25 @@
 <resources>
     <string name="app_name">CheapestOilFinder</string>
     <string name="home_title">CheapestOilFinder</string>
-    <string name="home_subtitle">총비용 기준으로 더 유리한 주유소를 찾기 위한 시작 화면</string>
+    <string name="home_subtitle">주유소 유가를 비교하고 더 경제적인 주유소를 찾는 앱</string>
     <string name="current_location_cta">현재 위치 기준 찾기</string>
     <string name="destination_cta">목적지 기준 찾기</string>
     <string name="settings_cta">설정 입력 화면</string>
-    <string name="home_helper">각 버튼은 독립 화면으로 연결되어 있으며 다음 단계에서 입력과 추천 흐름을 붙일 예정입니다.</string>
+    <string name="home_helper">각 버튼은 입력 화면으로 연결되어 있으며, 다음 단계에서 입력과 추천 결과가 연결됩니다.</string>
     <string name="current_location_title">현재 위치 기준 찾기</string>
-    <string name="current_location_description">상단 지도 영역은 이후 외부 지도 API 뷰가 들어갈 자리입니다. 현재는 구조만 먼저 배치해두었습니다.</string>
+    <string name="current_location_description">상단 지도 영역에는 추후 지도 SDK 또는 지도 API가 들어가며, 현재는 구조만 먼저 배치해두었습니다.</string>
     <string name="current_location_map_placeholder_title">지도 영역</string>
     <string name="current_location_map_placeholder_body">추후 지도 SDK 또는 외부 지도 API 결과를 이 영역에 표시합니다.</string>
-    <string name="map_auth_error_message">카카오맵 인증에 실패했습니다. 네이티브 앱 키와 키 해시 등록 상태를 확인해주세요.</string>
+    <string name="map_auth_error_message">카카오맵 인증에 실패했습니다. 앱의 키 해시와 등록 상태를 확인해 주세요.</string>
     <string name="set_current_location_cta">현 위치로 설정</string>
     <string name="gps_cta">GPS</string>
     <string name="destination_title">목적지 기준 찾기</string>
-    <string name="destination_description">상단 지도 영역에는 현 위치부터 목적지까지의 경로와 경로상 주유소가 표시될 예정입니다.</string>
+    <string name="destination_description">현재 위치부터 목적지까지의 경로를 기준으로 주변 주유소를 찾는 화면입니다.</string>
     <string name="destination_map_placeholder_title">경로 지도 영역</string>
-    <string name="destination_map_placeholder_body">추후 길찾기 결과와 경로상 주유소 마커를 이 영역에 표시합니다.</string>
+    <string name="destination_map_placeholder_body">추후 길찾기 결과와 경로상의 주유소 마커를 이 영역에 표시합니다.</string>
     <string name="set_destination_cta">목적지로 설정</string>
     <string name="settings_title">설정 입력</string>
-    <string name="settings_subtitle">차량 정보와 기본값을 입력하는 독립 화면입니다.</string>
+    <string name="settings_subtitle">차량 정보와 기본값을 입력하는 화면입니다.</string>
     <string name="settings_efficiency_label">차량 연비 (km/L)</string>
     <string name="settings_fuel_amount_label">기본 주유량 (L)</string>
     <string name="settings_fuel_type_label">연료 종류</string>
@@ -28,6 +28,9 @@
     <string name="settings_placeholder_efficiency">예: 13.8</string>
     <string name="settings_placeholder_fuel_amount">예: 35</string>
     <string name="settings_placeholder_discount">예: 카드 할인 80원/L, 멤버십 적립</string>
-    <string name="settings_save_placeholder">저장 기능은 다음 단계에서 연결됩니다</string>
+    <string name="settings_save_placeholder">저장 기능은 다음 단계에서 연결됩니다.</string>
     <string name="back_button">뒤로가기</string>
+    <string name="location_permission_required_message">현재 위치 기능을 사용하려면 위치 권한이 필요합니다.</string>
+    <string name="location_services_unavailable_message">위치 서비스를 사용할 수 없습니다.</string>
+    <string name="location_provider_unavailable_message">사용 가능한 위치 제공자가 없습니다.</string>
 </resources>

@@ -1,6 +1,10 @@
 package com.example.cheapestoilfinder.map
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
@@ -18,6 +22,8 @@ import com.kakao.vectormap.MapView
 import com.kakao.vectormap.camera.CameraUpdateFactory
 import com.kakao.vectormap.label.Label
 import com.kakao.vectormap.label.LabelLayer
+import com.kakao.vectormap.label.LabelLayerOptions
+import com.kakao.vectormap.label.CompetitionType
 import com.kakao.vectormap.label.LabelOptions
 import com.kakao.vectormap.label.LabelStyle
 import com.kakao.vectormap.label.LabelStyles
@@ -32,15 +38,17 @@ class KakaoMapController(
     private var mapPlaceholderBody: TextView? = null
     private var mapView: MapView? = null
     private var kakaoMap: KakaoMap? = null
-    private var labelLayer: LabelLayer? = null
+    private var stationLabelLayer: LabelLayer? = null
+    private var currentLocationLabelLayer: LabelLayer? = null
+    private var currentLocationLabel: Label? = null
     private var stationLabelStyles: LabelStyles? = null
     private var currentLocationLabelStyles: LabelStyles? = null
-    private var currentLocationLabel: Label? = null
     private val stationLabels = mutableListOf<Label>()
     private val renderedStations = mutableListOf<GasStation>()
     private var renderedRoute: RouteInfo? = null
     private var pendingCameraPoint: LocationPoint? = null
     private var pendingCameraZoomLevel: Int = 15
+    private var pendingCameraShowsCurrentLocation = false
     private var hasPendingCameraMove = false
 
     override fun bind(activity: Activity) {
@@ -81,7 +89,10 @@ class KakaoMapController(
                 override fun onMapDestroy() {
                     Log.i(TAG, "Kakao map destroyed for mode: $screenMode")
                     kakaoMap = null
-                    labelLayer = null
+                    stationLabelLayer = null
+                    currentLocationLabelLayer = null
+                    stationLabelStyles = null
+                    currentLocationLabelStyles = null
                     mapPlaceholder?.visibility = View.VISIBLE
                 }
 
@@ -97,23 +108,28 @@ class KakaoMapController(
             object : KakaoMapReadyCallback() {
                 override fun onMapReady(readyMap: KakaoMap) {
                     kakaoMap = readyMap
-                    labelLayer = kakaoMap?.labelManager?.layer
-                    ensureLabelStyles()
+                    ensureLabelLayers()
                     Log.i(TAG, "Kakao map ready for mode: $screenMode")
 
                     mapPlaceholder?.visibility = View.GONE
 
                     if (hasPendingCameraMove && pendingCameraPoint != null) {
-                        applyCameraMove(pendingCameraPoint!!, pendingCameraZoomLevel)
+                        applyCameraMove(
+                            pendingCameraPoint!!,
+                            pendingCameraZoomLevel,
+                            pendingCameraShowsCurrentLocation
+                        )
                     } else if (screenMode == MapScreenMode.CURRENT_LOCATION) {
                         applyCameraMove(
                             LocationPoint(37.5665, 126.9780, "서울시청", "서울특별시 중구 세종대로 110"),
-                            15
+                            15,
+                            true
                         )
                     } else {
                         applyCameraMove(
                             LocationPoint(37.5665, 126.9780, "출발지", "서울특별시 중구 세종대로 110"),
-                            13
+                            13,
+                            false
                         )
                     }
 
@@ -134,6 +150,7 @@ class KakaoMapController(
     override fun moveCamera(point: LocationPoint, zoomLevel: Int) {
         pendingCameraPoint = point
         pendingCameraZoomLevel = zoomLevel
+        pendingCameraShowsCurrentLocation = false
         hasPendingCameraMove = true
 
         if (kakaoMap == null) {
@@ -141,7 +158,21 @@ class KakaoMapController(
             return
         }
 
-        applyCameraMove(point, zoomLevel)
+        applyCameraMove(point, zoomLevel, false)
+    }
+
+    override fun focusCurrentLocation(point: LocationPoint, zoomLevel: Int) {
+        pendingCameraPoint = point
+        pendingCameraZoomLevel = zoomLevel
+        pendingCameraShowsCurrentLocation = true
+        hasPendingCameraMove = true
+
+        if (kakaoMap == null) {
+            Log.d(TAG, "focusCurrentLocation queued. kakaoMap is not ready yet.")
+            return
+        }
+
+        applyCameraMove(point, zoomLevel, true)
     }
 
     override fun showStations(stations: List<GasStation>) {
@@ -164,29 +195,48 @@ class KakaoMapController(
         Log.d(TAG, "clearMapObjects requested.")
     }
 
-    private fun ensureLabelStyles() {
+    private fun ensureLabelLayers() {
         val map = kakaoMap ?: return
+        val labelManager = map.labelManager ?: return
+
+        if (stationLabelLayer == null) {
+            stationLabelLayer = labelManager.addLayer(
+                LabelLayerOptions.from("station-layer")
+                    .setVisible(true)
+                    .setCompetitionType(CompetitionType.None)
+                    .setZOrder(5000)
+            )
+        }
+
+        if (currentLocationLabelLayer == null) {
+            currentLocationLabelLayer = labelManager.addLayer(
+                LabelLayerOptions.from("current-location-layer")
+                    .setVisible(true)
+                    .setCompetitionType(CompetitionType.None)
+                    .setZOrder(6000)
+            )
+        }
 
         if (stationLabelStyles == null) {
-            stationLabelStyles = map.labelManager?.addLabelStyles(
+            stationLabelStyles = labelManager.addLabelStyles(
                 LabelStyles.from(
-                    LabelStyle.from(R.drawable.ic_marker_station)
+                    LabelStyle.from(buildStationMarkerBitmap())
                         .setAnchorPoint(0.5f, 1.0f)
                 )
             )
         }
 
         if (currentLocationLabelStyles == null) {
-            currentLocationLabelStyles = map.labelManager?.addLabelStyles(
+            currentLocationLabelStyles = labelManager.addLabelStyles(
                 LabelStyles.from(
-                    LabelStyle.from(R.drawable.ic_marker_current_location)
-                        .setAnchorPoint(0.5f, 1.0f)
+                    LabelStyle.from(buildCurrentLocationMarkerBitmap())
+                        .setAnchorPoint(0.5f, 0.5f)
                 )
             )
         }
     }
 
-    private fun applyCameraMove(point: LocationPoint, zoomLevel: Int) {
+    private fun applyCameraMove(point: LocationPoint, zoomLevel: Int, showCurrentLocationMarker: Boolean) {
         val map = kakaoMap ?: return
 
         map.moveCamera(
@@ -197,25 +247,25 @@ class KakaoMapController(
         map.moveCamera(CameraUpdateFactory.zoomTo(zoomLevel))
         Log.d(TAG, "moveCamera requested: ${point.latitude}, ${point.longitude}")
 
-        if (screenMode == MapScreenMode.CURRENT_LOCATION) {
+        if (showCurrentLocationMarker || screenMode == MapScreenMode.CURRENT_LOCATION) {
             renderCurrentLocationMarker(point)
         }
     }
 
     private fun renderStations() {
-        val map = kakaoMap ?: return
-        val layer = labelLayer ?: return
-
         clearRenderedStations()
-        ensureLabelStyles()
+        ensureLabelLayers()
+        val layer = stationLabelLayer ?: return
 
+        layer.setVisible(true)
         for (station in renderedStations) {
             val point = station.locationPoint
             val label = layer.addLabel(
                 LabelOptions.from(
-                    station.id,
                     LatLng.from(point.latitude, point.longitude)
-                ).setStyles(stationLabelStyles)
+                )
+                    .setStyles(stationLabelStyles ?: return)
+                    .setVisible(true)
             )
             stationLabels.add(label)
         }
@@ -224,20 +274,21 @@ class KakaoMapController(
     }
 
     private fun renderCurrentLocationMarker(point: LocationPoint) {
-        val map = kakaoMap ?: return
-        val layer = labelLayer ?: return
-        if (screenMode != MapScreenMode.CURRENT_LOCATION) return
-
         clearCurrentLocationLabel()
-        ensureLabelStyles()
+        ensureLabelLayers()
+        val layer = currentLocationLabelLayer ?: return
 
-        currentLocationLabel = layer.addLabel(
-            LabelOptions.from(
-                "current-location",
-                LatLng.from(point.latitude, point.longitude)
-            ).setStyles(currentLocationLabelStyles)
+        Log.d(TAG, "renderCurrentLocationMarker requested: ${point.latitude}, ${point.longitude}")
+        val options = LabelOptions.from(
+            LatLng.from(point.latitude, point.longitude)
         )
-        Log.d(TAG, "renderCurrentLocationMarker finished.")
+            .setStyles(currentLocationLabelStyles ?: return)
+            .setVisible(true)
+            .setRank(Long.MAX_VALUE)
+
+        currentLocationLabel = layer.addLabel(options)
+        layer.setVisible(true)
+        Log.d(TAG, "renderCurrentLocationMarker finished. label=${currentLocationLabel != null}")
     }
 
     private fun clearRenderedStations() {
@@ -248,6 +299,37 @@ class KakaoMapController(
     private fun clearCurrentLocationLabel() {
         currentLocationLabel?.remove()
         currentLocationLabel = null
+    }
+
+    private fun buildStationMarkerBitmap(): Bitmap {
+        return createMarkerBitmap(fillColor = Color.parseColor("#F97316"), outerColor = Color.WHITE, sizePx = 72, innerRatio = 0.48f)
+    }
+
+    private fun buildCurrentLocationMarkerBitmap(): Bitmap {
+        return createMarkerBitmap(fillColor = Color.parseColor("#2563EB"), outerColor = Color.WHITE, sizePx = 64, innerRatio = 0.42f)
+    }
+
+    private fun createMarkerBitmap(
+        fillColor: Int,
+        outerColor: Int,
+        sizePx: Int,
+        innerRatio: Float
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val outerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = outerColor
+            style = Paint.Style.FILL
+        }
+        val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = fillColor
+            style = Paint.Style.FILL
+        }
+
+        val center = sizePx / 2f
+        canvas.drawCircle(center, center, center, outerPaint)
+        canvas.drawCircle(center, center, center * innerRatio, innerPaint)
+        return bitmap
     }
 
     companion object {

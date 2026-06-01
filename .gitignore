@@ -24,6 +24,8 @@ captures/
 *.class
 app/build/
 build/
+backend-build/
+backend-gradle-cache/
 
 # Debug artifacts created during local verification
 shot*.png
@@ -38,8 +40,10 @@ mainshot.png
 # Reports and temporary logs
 *.log
 *.tmp
-docs/BACKEND_API_ACCESS_CLAIM.md
-docs/archive/BACKEND_API_ACCESS_CLAIM_*.md
+
+# Local claim / investigation notes
+**/BACKEND_API_ACCESS_CLAIM.md
+**/BACKEND_API_ACCESS_CLAIM_*.md
 
 # Signing and release secrets
 keystore.properties
