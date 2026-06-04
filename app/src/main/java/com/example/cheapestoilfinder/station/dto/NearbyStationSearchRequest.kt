@@ -6,7 +6,7 @@ import com.example.cheapestoilfinder.station.api.StationSearchSortOrder
 data class NearbyStationSearchRequest(
     var latitude: Double = 0.0,
     var longitude: Double = 0.0,
-    var radiusKm: Double = 5.0,
+    var radiusMeters: Int = 5000,
     var fuelAmountLiters: Double = 30.0,
     var fuelEfficiencyKmPerLiter: Double = 10.0,
     var fuelTypes: List<FuelType> = defaultFuelTypes(),
@@ -16,7 +16,7 @@ data class NearbyStationSearchRequest(
     constructor(
         latitude: Double,
         longitude: Double,
-        radiusKm: Double,
+        radiusMeters: Int,
         fuelAmountLiters: Double,
         fuelEfficiencyKmPerLiter: Double,
         fuelTypes: List<FuelType>?,
@@ -24,7 +24,7 @@ data class NearbyStationSearchRequest(
     ) : this(
         latitude,
         longitude,
-        radiusKm,
+        radiusMeters,
         fuelAmountLiters,
         fuelEfficiencyKmPerLiter,
         fuelTypes ?: defaultFuelTypes(),

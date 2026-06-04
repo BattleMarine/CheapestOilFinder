@@ -5,7 +5,6 @@ import android.Manifest
 import android.os.Bundle
 import android.content.pm.PackageManager
 import android.util.Log
-import android.widget.ImageButton
 import android.widget.Button
 import android.widget.Toast
 import com.example.cheapestoilfinder.R
@@ -22,7 +21,7 @@ class DestinationActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_destination)
 
-        findViewById<ImageButton>(R.id.button_back).setOnClickListener { finish() }
+        findViewById<Button>(R.id.button_back).setOnClickListener { finish() }
         findViewById<Button>(R.id.button_destination_gps).setOnClickListener {
             refreshCurrentLocationFromGps()
         }

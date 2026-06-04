@@ -22,19 +22,21 @@ class BackendStationRepository private constructor(
         request: NearbyStationSearchRequest,
         callback: ApiCallback<StationSearchResponse>
     ) {
-        enqueue(
-            apiService.searchNearbyStations(
-                request.latitude,
-                request.longitude,
-                request.radiusKm,
-                request.fuelAmountLiters,
-                request.fuelEfficiencyKmPerLiter,
-                request.fuelTypes.toMutableList(),
-                request.sortOrder,
-                request.referenceLabel.orEmpty()
-            ),
-            callback
+        val call = apiService.searchNearbyStations(
+            request.latitude,
+            request.longitude,
+            request.radiusMeters,
+            request.fuelAmountLiters,
+            request.fuelEfficiencyKmPerLiter,
+            request.fuelTypes.toMutableList(),
+            request.sortOrder,
+            request.referenceLabel.orEmpty()
         )
+        android.util.Log.d(
+            TAG,
+            "searchNearbyStations request url=${call.request().url}"
+        )
+        enqueue(call, callback)
     }
 
     override fun searchRouteStations(
@@ -61,7 +63,12 @@ class BackendStationRepository private constructor(
                     return
                 }
 
-                callback.onError(BackendApiException(response.code(), readErrorBody(response)))
+                val errorBody = readErrorBody(response)
+                android.util.Log.w(
+                    TAG,
+                    "Backend API error ${response.code()} for ${call.request().url}: $errorBody"
+                )
+                callback.onError(BackendApiException(response.code(), errorBody))
             }
 
             override fun onFailure(call: Call<T>, t: Throwable) {
@@ -79,12 +86,13 @@ class BackendStationRepository private constructor(
     }
 
     companion object {
+        private const val TAG = "BackendStationRepository"
         fun create(baseUrl: String): BackendStationRepository {
             return BackendStationRepository(BackendApiClient.create(baseUrl))
         }
 
         fun createDefault(): BackendStationRepository {
-            return create(BackendApiConfig.DEFAULT_DEBUG_BASE_URL)
+            return create(BackendApiConfig.DEFAULT_BASE_URL)
         }
     }
 }

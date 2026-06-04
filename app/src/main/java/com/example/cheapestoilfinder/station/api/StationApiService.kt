@@ -15,7 +15,7 @@ interface StationApiService {
     fun searchNearbyStations(
         @Query("latitude") latitude: Double,
         @Query("longitude") longitude: Double,
-        @Query("radiusKm") radiusKm: Double,
+        @Query("radiusMeters") radiusMeters: Int,
         @Query("fuelAmountLiters") fuelAmountLiters: Double,
         @Query("fuelEfficiencyKmPerLiter") fuelEfficiencyKmPerLiter: Double,
         @Query("fuelTypes") fuelTypes: MutableList<FuelType>,

@@ -14,7 +14,7 @@ object StationDisplayMapper {
 
     fun toGasStation(item: StationSearchItem?): GasStation {
         if (item == null) {
-            return GasStation("", "", "", "", 0, LocationPoint(0.0, 0.0, "", ""))
+            return GasStation("", "", "", "", 0, 0, LocationPoint(0.0, 0.0, "", ""), null)
         }
 
         return GasStation(
@@ -23,12 +23,14 @@ object StationDisplayMapper {
             item.brandName.orEmpty(),
             item.cheapestFuelType?.name.orEmpty(),
             item.cheapestFuelPriceWon ?: 0,
+            item.distanceMeters,
             LocationPoint(
                 item.latitude,
                 item.longitude,
                 item.stationName.orEmpty(),
                 item.address.orEmpty()
-            )
+            ),
+            item.fuelPrices
         )
     }
 }

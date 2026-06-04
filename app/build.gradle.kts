@@ -25,6 +25,12 @@ val kakaoNativeAppKey = when {
     else -> ""
 }
 
+val backendBaseUrlTextFile = rootProject.file("secrets/backend_base_url.txt")
+val backendBaseUrl = when {
+    backendBaseUrlTextFile.exists() -> backendBaseUrlTextFile.readText().trim()
+    else -> "http://10.0.2.2:8080/"
+}
+
 android {
     namespace = "com.example.cheapestoilfinder"
     compileSdk = 35
@@ -55,6 +61,11 @@ android {
                 "KAKAO_NATIVE_APP_KEY",
                 "\"$kakaoNativeAppKey\""
             )
+            buildConfigField(
+                "String",
+                "BACKEND_BASE_URL",
+                "\"$backendBaseUrl\""
+            )
             if (keystoreProperties.isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("appSigning")
             }
@@ -63,6 +74,11 @@ android {
         release {
             isMinifyEnabled = false
             buildConfigField("String", "KAKAO_NATIVE_APP_KEY", "\"\"")
+            buildConfigField(
+                "String",
+                "BACKEND_BASE_URL",
+                "\"$backendBaseUrl\""
+            )
             if (keystoreProperties.isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("appSigning")
             }
@@ -90,6 +106,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.kakao.maps.open:android:2.13.1")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")

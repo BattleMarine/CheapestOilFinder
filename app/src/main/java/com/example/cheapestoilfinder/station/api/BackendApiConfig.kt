@@ -1,7 +1,9 @@
 package com.example.cheapestoilfinder.station.api
 
+import com.example.cheapestoilfinder.BuildConfig
+
 object BackendApiConfig {
-    const val DEFAULT_DEBUG_BASE_URL = "http://10.0.2.2:8080/"
+    val DEFAULT_BASE_URL: String = BuildConfig.BACKEND_BASE_URL
 
     fun normalizeBaseUrl(baseUrl: String?): String {
         require(!baseUrl.isNullOrBlank()) { "baseUrl must not be null or empty" }
