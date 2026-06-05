@@ -13,6 +13,7 @@ import com.example.cheapestoilfinder.map.model.LocationPoint
 object DeviceLocationResolver {
     fun resolveCurrentLocation(
         context: Context,
+        forceRefresh: Boolean = false,
         onSuccess: (LocationPoint) -> Unit,
         onError: (String) -> Unit
     ) {
@@ -27,9 +28,11 @@ object DeviceLocationResolver {
             return
         }
 
-        pickBestLastKnownLocation(locationManager)?.let { lastKnownLocation ->
-            onSuccess(lastKnownLocation.toLocationPoint())
-            return
+        if (!forceRefresh) {
+            pickBestLastKnownLocation(locationManager)?.let { lastKnownLocation ->
+                onSuccess(lastKnownLocation.toLocationPoint())
+                return
+            }
         }
 
         val provider = when {

@@ -5,6 +5,7 @@ import android.Manifest
 import android.os.Bundle
 import android.util.Log
 import android.content.pm.PackageManager
+import android.location.Location
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
@@ -32,6 +33,8 @@ class CurrentLocationActivity : Activity() {
     private var stationRepository: BackendStationRepository? = null
     private lateinit var stationListAdapter: StationListAdapter
     private var currentLocationActionsContainer: View? = null
+    private var refreshGpsButton: Button? = null
+    private var setCurrentLocationButton: Button? = null
     private var stationListContainer: View? = null
     private var stationListSheet: View? = null
     private var stationListHeader: View? = null
@@ -73,11 +76,13 @@ class CurrentLocationActivity : Activity() {
         setContentView(R.layout.activity_current_location)
 
         findViewById<Button>(R.id.button_back).setOnClickListener { finish() }
-        findViewById<Button>(R.id.button_set_current_location).setOnClickListener {
+        setCurrentLocationButton = findViewById(R.id.button_set_current_location)
+        setCurrentLocationButton?.setOnClickListener {
             Log.i(TAG, "Current location set button clicked")
             requestStationsAroundCurrentLocation()
         }
-        findViewById<Button>(R.id.button_refresh_gps).setOnClickListener {
+        refreshGpsButton = findViewById(R.id.button_refresh_gps)
+        refreshGpsButton?.setOnClickListener {
             Log.i(TAG, "GPS refresh button clicked")
             refreshCurrentLocationFromGps()
         }
@@ -114,27 +119,43 @@ class CurrentLocationActivity : Activity() {
         }
 
         hasRequestedInitialLocation = true
-        resolveCurrentLocation(autoSearchStations = false)
+        resolveCurrentLocation(autoSearchStations = true)
     }
 
     private fun refreshCurrentLocationFromGps() {
         if (hasLocationPermission()) {
-            resolveCurrentLocation(autoSearchStations = false, forceRefresh = true)
+            val previousPoint = currentGpsPoint
+            resolveCurrentLocation(autoSearchStations = false, forceRefresh = true) { point ->
+                if (previousPoint == null || distanceMeters(previousPoint, point) >= 10f) {
+                    loadStationsAround(point)
+                } else {
+                    Log.i(TAG, "GPS update under 10m; skipping station reload")
+                }
+            }
             return
         }
 
         pendingGpsActionAfterPermission = {
-            resolveCurrentLocation(autoSearchStations = false, forceRefresh = true)
+            val previousPoint = currentGpsPoint
+            resolveCurrentLocation(autoSearchStations = false, forceRefresh = true) { point ->
+                if (previousPoint == null || distanceMeters(previousPoint, point) >= 10f) {
+                    loadStationsAround(point)
+                } else {
+                    Log.i(TAG, "GPS update under 10m; skipping station reload")
+                }
+            }
         }
         requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), REQUEST_LOCATION_PERMISSION)
     }
 
     private fun resolveCurrentLocation(
         autoSearchStations: Boolean,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        onResolved: ((LocationPoint) -> Unit)? = null
     ) {
         DeviceLocationResolver.resolveCurrentLocation(
             context = this,
+            forceRefresh = forceRefresh,
             onSuccess = { point ->
                 Log.i(TAG, "GPS location resolved for current location screen: ${point.latitude}, ${point.longitude}")
                 currentGpsPoint = point
@@ -144,6 +165,7 @@ class CurrentLocationActivity : Activity() {
                     Log.i(TAG, "Auto-searching nearby stations after GPS resolve")
                     loadStationsAround(point)
                 }
+                onResolved?.invoke(point)
             },
             onError = { message ->
                 Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
@@ -346,7 +368,6 @@ class CurrentLocationActivity : Activity() {
             return
         }
 
-        currentLocationActionsContainer?.visibility = View.GONE
         stationInfoContainer?.visibility = View.VISIBLE
         stationInfoContainer?.bringToFront()
         stationInfoScrim?.alpha = 0f
@@ -818,12 +839,22 @@ class CurrentLocationActivity : Activity() {
     }
 
     private fun updateCurrentLocationActionsVisibility() {
-        currentLocationActionsContainer?.visibility =
-            if (stationSheetState == StationSheetState.HIDDEN && stationInfoSheetState == StationSheetState.HIDDEN) {
-                View.VISIBLE
-            } else {
-                View.GONE
-            }
+        val shouldShowSetButton =
+            stationSheetState == StationSheetState.HIDDEN && stationInfoSheetState == StationSheetState.HIDDEN
+        setCurrentLocationButton?.visibility = if (shouldShowSetButton) View.VISIBLE else View.GONE
+        refreshGpsButton?.visibility = View.VISIBLE
+    }
+
+    private fun distanceMeters(from: LocationPoint, to: LocationPoint): Float {
+        val results = FloatArray(1)
+        Location.distanceBetween(
+            from.latitude,
+            from.longitude,
+            to.latitude,
+            to.longitude,
+            results
+        )
+        return results[0]
     }
 
     companion object {

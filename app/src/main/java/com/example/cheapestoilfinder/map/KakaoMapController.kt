@@ -77,6 +77,7 @@ class KakaoMapController(
     private var renderedRoute: RouteInfo? = null
     private var pendingCameraPoint: LocationPoint? = null
     private var pendingCameraZoomLevel: Int = 15
+    private var pendingCameraPaddingBottom: Int = 0
     private var pendingCameraShowsCurrentLocation = false
     private var hasPendingCameraMove = false
     private var currentZoomLevel: Int = 15
@@ -191,6 +192,7 @@ class KakaoMapController(
     override fun moveCamera(point: LocationPoint, zoomLevel: Int) {
         pendingCameraPoint = point
         pendingCameraZoomLevel = zoomLevel
+        pendingCameraPaddingBottom = 0
         pendingCameraShowsCurrentLocation = false
         hasPendingCameraMove = true
 
@@ -205,6 +207,7 @@ class KakaoMapController(
     override fun focusCurrentLocation(point: LocationPoint, zoomLevel: Int) {
         pendingCameraPoint = point
         pendingCameraZoomLevel = zoomLevel
+        pendingCameraPaddingBottom = 0
         pendingCameraShowsCurrentLocation = true
         hasPendingCameraMove = true
 
@@ -219,6 +222,10 @@ class KakaoMapController(
     override fun focusStation(point: LocationPoint, zoomLevel: Int) {
         pendingCameraPoint = point
         pendingCameraZoomLevel = zoomLevel
+        // 주유소 상세 정보를 아래에서 위로 올릴 때, 주유소 위치가 가려지지 않도록
+        // 지도의 중심을 상단 25% 지점으로 옮기기 위해 하단 패딩을 전체 높이의 절반으로 설정합니다.
+        val height = mapContainer?.height ?: 0
+        pendingCameraPaddingBottom = height / 2
         pendingCameraShowsCurrentLocation = false
         hasPendingCameraMove = true
 
@@ -355,6 +362,9 @@ class KakaoMapController(
     private fun applyCameraMove(point: LocationPoint, zoomLevel: Int, showCurrentLocationMarker: Boolean) {
         val map = kakaoMap ?: return
         lastCurrentLocationPoint = point
+
+        // Apply pending padding
+        map.setPadding(0, 0, 0, pendingCameraPaddingBottom)
 
         map.moveCamera(
             CameraUpdateFactory.newCenterPosition(
