@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.BitmapFactory
 import android.graphics.Path
+import android.graphics.Point
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.TextPaint
@@ -34,6 +35,7 @@ import com.kakao.vectormap.label.LabelLayer
 import com.kakao.vectormap.label.LabelLayerOptions
 import com.kakao.vectormap.label.LabelManager
 import com.kakao.vectormap.label.LabelOptions
+import com.kakao.vectormap.label.OrderingType
 import com.kakao.vectormap.label.LabelStyle
 import com.kakao.vectormap.label.LabelStyles
 import com.kakao.vectormap.shape.MapPoints
@@ -70,10 +72,12 @@ class KakaoMapController(
     private var currentLocationLabel: Label? = null
     private var currentLocationLabelStyles: LabelStyles? = null
     private val stationLabelStylesByResId = mutableMapOf<Int, LabelStyles>()
-    private val stationLabels = mutableListOf<Label>()
-    private val stationPriceLabels = mutableListOf<Label>()
+    private val stationLabelsById = mutableMapOf<String, Label>()
+    private val stationPriceLabelsById = mutableMapOf<String, Label>()
     private val renderedStations = mutableListOf<GasStation>()
     private var lastCurrentLocationPoint: LocationPoint? = null
+    private var lastCameraPoint: LocationPoint? = null
+    private var lastCameraShowsCurrentLocation: Boolean = false
     private var renderedRoute: RouteInfo? = null
     private var pendingCameraPoint: LocationPoint? = null
     private var pendingCameraZoomLevel: Int = 15
@@ -237,6 +241,14 @@ class KakaoMapController(
         applyCameraMove(point, zoomLevel, false)
     }
 
+    fun zoomInFixedStep() {
+        adjustFixedZoom(zoomingIn = true)
+    }
+
+    fun zoomOutFixedStep() {
+        adjustFixedZoom(zoomingIn = false)
+    }
+
     override fun showStations(stations: List<GasStation>) {
         renderedStations.clear()
         renderedStations.addAll(stations)
@@ -287,6 +299,7 @@ class KakaoMapController(
                 LabelLayerOptions.from("station-icon-layer")
                     .setVisible(true)
                     .setCompetitionType(CompetitionType.None)
+                    .setOrderingType(OrderingType.Rank)
                     .setZOrder(5000)
             )
         }
@@ -296,6 +309,7 @@ class KakaoMapController(
                 LabelLayerOptions.from("station-price-layer")
                     .setVisible(true)
                     .setCompetitionType(CompetitionType.None)
+                    .setOrderingType(OrderingType.Rank)
                     .setZOrder(5001)
             )
         }
@@ -338,6 +352,8 @@ class KakaoMapController(
                     renderedStations.isNotEmpty()
                 ) {
                     renderStationOverlaysForZoom(currentZoomLevel)
+                } else if (renderedStations.isNotEmpty()) {
+                    renderStationOverlaysForZoom(currentZoomLevel)
                 }
             }
         })
@@ -362,6 +378,8 @@ class KakaoMapController(
     private fun applyCameraMove(point: LocationPoint, zoomLevel: Int, showCurrentLocationMarker: Boolean) {
         val map = kakaoMap ?: return
         lastCurrentLocationPoint = point
+        lastCameraPoint = point
+        lastCameraShowsCurrentLocation = showCurrentLocationMarker
 
         // Apply pending padding
         map.setPadding(0, 0, 0, pendingCameraPaddingBottom)
@@ -384,9 +402,38 @@ class KakaoMapController(
         }
     }
 
+    private fun adjustFixedZoom(zoomingIn: Boolean) {
+        val targetZoom = if (zoomingIn) {
+            nextFixedZoomIn(currentZoomLevel)
+        } else {
+            nextFixedZoomOut(currentZoomLevel)
+        }
+
+        if (targetZoom == currentZoomLevel) {
+            return
+        }
+
+        val point = lastCameraPoint ?: pendingCameraPoint ?: return
+        if (kakaoMap == null) {
+            pendingCameraPoint = point
+            pendingCameraZoomLevel = targetZoom
+            pendingCameraShowsCurrentLocation = lastCameraShowsCurrentLocation
+            hasPendingCameraMove = true
+            return
+        }
+
+        applyCameraMove(point, targetZoom, lastCameraShowsCurrentLocation)
+    }
+
+    private fun nextFixedZoomIn(currentZoom: Int): Int {
+        return fixedZoomLevels.firstOrNull { it > currentZoom } ?: fixedZoomLevels.last()
+    }
+
+    private fun nextFixedZoomOut(currentZoom: Int): Int {
+        return fixedZoomLevels.lastOrNull { it < currentZoom } ?: fixedZoomLevels.first()
+    }
+
     private fun renderStationOverlaysForZoom(zoomLevel: Int) {
-        clearRenderedStations()
-        clearRenderedStationPrices()
         ensureLabelLayers()
         val layer = stationLabelLayer ?: return
 
@@ -412,35 +459,44 @@ class KakaoMapController(
         currentPriceScale = desiredScale
 
         val stationsToRender = resolveStationsForZoom(markerMode)
+        val orderedStations = orderStationsByScreenPosition(stationsToRender)
+        val visibleStationIds = orderedStations.mapTo(hashSetOf()) { it.id }
 
         layer.setVisible(true)
-        Log.d(TAG, "renderStations requested. count=${stationsToRender.size}, mode=$markerMode")
-        for (station in stationsToRender) {
+        removeStaleStationLabels(visibleStationIds)
+        Log.d(TAG, "renderStations requested. count=${orderedStations.size}, mode=$markerMode")
+        orderedStations.forEachIndexed { index, station ->
             val point = station.locationPoint
             Log.d(TAG, "renderStation marker: ${station.id} @ ${point.latitude}, ${point.longitude}")
-            val stationLogoStyles = getStationLogoStyles(station.brand) ?: continue
-            val label = layer.addLabel(
+            val stationLogoStyles = getStationLogoStyles(station.brand) ?: return@forEachIndexed
+            val stationRank = 1000L + index
+            val label = stationLabelsById[station.id] ?: layer.addLabel(
                 LabelOptions.from(
                     LatLng.from(point.latitude, point.longitude)
                 )
-                    .setRank(100L)
+                    .setRank(stationRank)
                     .setStyles(stationLogoStyles)
                     .setTag(station)
                     .setVisible(true)
-            )
-            label.setClickable(true)
+            ).also {
+                stationLabelsById[station.id] = it
+                it.setClickable(true)
+            }
+            label.setTag(station)
+            label.setRank(stationRank)
+            label.moveTo(LatLng.from(point.latitude, point.longitude))
+            label.changeStyles(stationLogoStyles)
             label.show()
-            stationLabels.add(label)
         }
 
         renderStationPriceLabelsForZoom(
             zoomLevel = zoomLevel,
-            stationsToRender = stationsToRender,
+            stationsToRender = orderedStations,
             desiredMode = desiredPriceMode,
             desiredOpacity = desiredOpacity,
             desiredScale = desiredScale
         )
-        Log.d(TAG, "renderStations finished. iconLabels=${stationLabels.size}, priceLabels=${stationPriceLabels.size}")
+        Log.d(TAG, "renderStations finished. iconLabels=${stationLabelsById.size}, priceLabels=${stationPriceLabelsById.size}")
     }
 
     private fun renderStationPriceLabelsForZoom(
@@ -450,47 +506,53 @@ class KakaoMapController(
         desiredOpacity: Float,
         desiredScale: Float
     ) {
-        clearRenderedStationPrices()
         ensureLabelLayers()
         val priceLayer = stationPriceLabelLayer ?: return
         val labelManager = kakaoMap?.labelManager ?: return
 
         if (desiredMode == StationPriceDisplayMode.HIDDEN || desiredOpacity <= 0.01f) {
             priceLayer.setVisible(false)
+            clearRenderedStationPrices()
             Log.d(TAG, "Station price labels hidden at zoom=$zoomLevel")
             return
         }
 
         priceLayer.setVisible(true)
+        removeStaleStationPriceLabels(stationsToRender.mapTo(hashSetOf()) { it.id })
         val showDiesel = zoomLevel >= 15
         Log.d(TAG, "Rendering station price labels mode=$desiredMode alpha=$desiredOpacity scale=$desiredScale zoom=$zoomLevel count=${renderedStations.size}")
 
-        for (station in stationsToRender) {
+        stationsToRender.forEachIndexed { index, station ->
             val point = station.locationPoint
             val priceLines = buildFuelPriceLines(station, showDiesel = showDiesel)
             if (priceLines.isEmpty()) {
-                continue
+                return@forEachIndexed
             }
 
+            val stationRank = 1000L + index
             val priceLabelStyles = labelManager.addLabelStyles(
                 LabelStyles.from(
                     LabelStyle.from(buildFuelPriceBitmap(priceLines, desiredOpacity, desiredScale))
                         .setAnchorPoint(0.5f, 1.0f)
                 )
             )
-            val priceLabel = priceLayer.addLabel(
+            val priceLabel = stationPriceLabelsById[station.id] ?: priceLayer.addLabel(
                 LabelOptions.from(
                     LatLng.from(point.latitude, point.longitude)
                 )
-                    .setRank(95L)
+                    .setRank(stationRank)
                     .setStyles(priceLabelStyles)
                     .setVisible(true)
-            )
+            ).also {
+                stationPriceLabelsById[station.id] = it
+            }
+            priceLabel.setRank(stationRank)
+            priceLabel.moveTo(LatLng.from(point.latitude, point.longitude))
+            priceLabel.changeStyles(priceLabelStyles)
             priceLabel.show()
-            stationPriceLabels.add(priceLabel)
         }
 
-        Log.d(TAG, "renderStationPriceLabelsForZoom finished. priceLabels=${stationPriceLabels.size}")
+        Log.d(TAG, "renderStationPriceLabelsForZoom finished. priceLabels=${stationPriceLabelsById.size}")
     }
 
     private fun fitCurrentLocationAndStations() {
@@ -522,6 +584,19 @@ class KakaoMapController(
         )
     }
 
+    private fun orderStationsByScreenPosition(stations: List<GasStation>): List<GasStation> {
+        val map = kakaoMap ?: return stations
+        return stations.sortedWith(
+            compareBy<GasStation> {
+                val screenPoint = map.toScreenPoint(LatLng.from(it.locationPoint.latitude, it.locationPoint.longitude))
+                screenPoint?.y ?: Int.MIN_VALUE
+            }.thenBy {
+                val screenPoint = map.toScreenPoint(LatLng.from(it.locationPoint.latitude, it.locationPoint.longitude))
+                screenPoint?.x ?: Int.MAX_VALUE
+            }
+        )
+    }
+
     private fun renderCurrentLocationMarker(point: LocationPoint) {
         clearCurrentLocationLabel()
         ensureLabelLayers()
@@ -541,13 +616,23 @@ class KakaoMapController(
     }
 
     private fun clearRenderedStations() {
-        stationLabels.forEach { it.remove() }
-        stationLabels.clear()
+        stationLabelsById.values.forEach { it.remove() }
+        stationLabelsById.clear()
     }
 
     private fun clearRenderedStationPrices() {
-        stationPriceLabels.forEach { it.remove() }
-        stationPriceLabels.clear()
+        stationPriceLabelsById.values.forEach { it.remove() }
+        stationPriceLabelsById.clear()
+    }
+
+    private fun removeStaleStationLabels(visibleStationIds: Set<String>) {
+        val staleIds = stationLabelsById.keys.filterNot { it in visibleStationIds }
+        staleIds.forEach { stationLabelsById.remove(it)?.remove() }
+    }
+
+    private fun removeStaleStationPriceLabels(visibleStationIds: Set<String>) {
+        val staleIds = stationPriceLabelsById.keys.filterNot { it in visibleStationIds }
+        staleIds.forEach { stationPriceLabelsById.remove(it)?.remove() }
     }
 
     private fun clearCurrentLocationLabel() {
@@ -680,7 +765,8 @@ class KakaoMapController(
     }
 
     private fun createCenteredLogoBitmap(source: Bitmap, targetSizePx: Int): Bitmap {
-        val bitmap = Bitmap.createBitmap(targetSizePx, targetSizePx, Bitmap.Config.ARGB_8888)
+        val bitmapSizePx = targetSizePx + 20
+        val bitmap = Bitmap.createBitmap(bitmapSizePx, bitmapSizePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val available = targetSizePx * 0.80f
         val scale = minOf(
@@ -689,8 +775,8 @@ class KakaoMapController(
         )
         val drawWidth = source.width * scale
         val drawHeight = source.height * scale
-        val left = (targetSizePx - drawWidth) / 2f
-        val top = (targetSizePx - drawHeight) / 2f
+        val left = (bitmapSizePx - drawWidth) / 2f
+        val top = (bitmapSizePx - drawHeight) / 2f
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         canvas.drawBitmap(source, null, RectF(left, top, left + drawWidth, top + drawHeight), paint)
         return bitmap
@@ -710,6 +796,7 @@ class KakaoMapController(
         val paddingBottom = 11f * clampedScale
         val lineSpacing = 5f * clampedScale
         val tailHeight = 22f * clampedScale
+        val tailBottomGap = 8f * clampedScale
         val tailWidth = 18f * clampedScale
         val bodyShiftX = 12f * clampedScale
 
@@ -727,7 +814,7 @@ class KakaoMapController(
         val bodyWidth = ceil(maxTextWidth + (paddingHorizontal * 2f)).toInt().coerceAtLeast((145f * clampedScale).toInt())
         val bodyHeight = ceil(contentHeight + paddingTop + paddingBottom).toInt().coerceAtLeast((56f * clampedScale).toInt())
         val bitmapWidth = (bodyWidth + bodyShiftX.toInt() + (tailWidth * 1.2f).toInt()).coerceAtLeast(bodyWidth)
-        val bitmapHeight = bodyHeight + tailHeight.toInt()
+        val bitmapHeight = bodyHeight + tailHeight.toInt() + tailBottomGap.toInt()
         val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
@@ -755,7 +842,7 @@ class KakaoMapController(
         val tail = Path().apply {
             moveTo(tailCenterX - tailWidth / 2f, bodyBottom)
             lineTo(tailCenterX + tailWidth / 2f, bodyBottom)
-            lineTo(tailCenterX, bitmapHeight.toFloat())
+            lineTo(tailCenterX, (bitmapHeight - tailBottomGap.toInt()).toFloat())
             close()
         }
         canvas.drawPath(tail, backgroundPaint)
@@ -939,6 +1026,7 @@ class KakaoMapController(
         private const val STATION_PRICE_GASOLINE_ONLY_ZOOM_LEVEL = 11
         private const val STATION_PRICE_FULL_ZOOM_LEVEL = 13
         private const val CURRENT_LOCATION_RADIUS_METERS = 5000
+        private val fixedZoomLevels = listOf(11, 12, 13, 15)
     }
 }
 

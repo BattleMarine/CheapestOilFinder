@@ -34,6 +34,8 @@ class CurrentLocationActivity : Activity() {
     private lateinit var stationListAdapter: StationListAdapter
     private var currentLocationActionsContainer: View? = null
     private var refreshGpsButton: Button? = null
+    private var zoomInButton: Button? = null
+    private var zoomOutButton: Button? = null
     private var setCurrentLocationButton: Button? = null
     private var stationListContainer: View? = null
     private var stationListSheet: View? = null
@@ -86,6 +88,16 @@ class CurrentLocationActivity : Activity() {
             Log.i(TAG, "GPS refresh button clicked")
             refreshCurrentLocationFromGps()
         }
+        zoomInButton = findViewById(R.id.button_zoom_in)
+        zoomInButton?.setOnClickListener {
+            Log.i(TAG, "Zoom in button clicked")
+            mapController?.zoomInFixedStep()
+        }
+        zoomOutButton = findViewById(R.id.button_zoom_out)
+        zoomOutButton?.setOnClickListener {
+            Log.i(TAG, "Zoom out button clicked")
+            mapController?.zoomOutFixedStep()
+        }
         currentLocationActionsContainer = findViewById(R.id.current_location_actions_container)
 
         configureStationListPanel()
@@ -123,6 +135,11 @@ class CurrentLocationActivity : Activity() {
     }
 
     private fun refreshCurrentLocationFromGps() {
+        currentGpsPoint?.let { cachedPoint ->
+            Log.i(TAG, "GPS refresh started. Focusing cached current point first.")
+            mapController?.focusCurrentLocation(cachedPoint, 15)
+        }
+
         if (hasLocationPermission()) {
             val previousPoint = currentGpsPoint
             resolveCurrentLocation(autoSearchStations = false, forceRefresh = true) { point ->
@@ -136,6 +153,10 @@ class CurrentLocationActivity : Activity() {
         }
 
         pendingGpsActionAfterPermission = {
+            currentGpsPoint?.let { cachedPoint ->
+                Log.i(TAG, "GPS refresh resumed after permission. Focusing cached current point first.")
+                mapController?.focusCurrentLocation(cachedPoint, 15)
+            }
             val previousPoint = currentGpsPoint
             resolveCurrentLocation(autoSearchStations = false, forceRefresh = true) { point ->
                 if (previousPoint == null || distanceMeters(previousPoint, point) >= 10f) {
@@ -370,7 +391,6 @@ class CurrentLocationActivity : Activity() {
 
         stationInfoContainer?.visibility = View.VISIBLE
         stationInfoContainer?.bringToFront()
-        stationInfoScrim?.alpha = 0f
         stationInfoScrim?.visibility = View.VISIBLE
         val sheet = stationInfoSheet ?: return
         sheet.animate().cancel()
@@ -379,7 +399,6 @@ class CurrentLocationActivity : Activity() {
             .translationY(stationInfoSheetCollapsedTranslationY)
             .setDuration(220L)
             .start()
-        stationInfoScrim?.animate()?.alpha(1f)?.setDuration(220L)?.start()
         stationInfoSheetState = StationSheetState.COLLAPSED
         updateCurrentLocationActionsVisibility()
     }
@@ -395,7 +414,6 @@ class CurrentLocationActivity : Activity() {
             .translationY(0f)
             .setDuration(220L)
             .start()
-        stationInfoScrim?.animate()?.alpha(1f)?.setDuration(220L)?.start()
         stationInfoSheetState = StationSheetState.EXPANDED
     }
 
@@ -412,7 +430,6 @@ class CurrentLocationActivity : Activity() {
 
         if (!animated) {
             sheet.translationY = stationInfoSheetHeightPx.toFloat()
-            stationInfoScrim?.alpha = 0f
             finish.run()
             return
         }
@@ -453,7 +470,6 @@ class CurrentLocationActivity : Activity() {
             .setDuration(220L)
             .withEndAction(finish)
             .start()
-        stationInfoScrim?.animate()?.alpha(1f)?.setDuration(220L)?.start()
     }
 
     private fun handleStationInfoSheetTouch(event: MotionEvent): Boolean {
@@ -480,8 +496,6 @@ class CurrentLocationActivity : Activity() {
                 val nextTranslation = (stationInfoSheetDragStartTranslationY + delta)
                     .coerceIn(0f, stationInfoSheetHeightPx.toFloat())
                 sheet.translationY = nextTranslation
-                val progress = 1f - (nextTranslation / stationInfoSheetHeightPx.toFloat())
-                stationInfoScrim?.alpha = progress.coerceIn(0f, 1f)
                 return true
             }
 

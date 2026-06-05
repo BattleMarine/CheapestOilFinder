@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FFF8F1">
@@ -56,6 +57,47 @@
         android:textAllCaps="false"
         android:textSize="20sp" />
 
+    <LinearLayout
+        android:id="@+id/zoom_controls_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="152dp"
+        android:elevation="8dp"
+        android:orientation="vertical"
+        android:translationY="-120px">
+
+        <Button
+            android:id="@+id/button_zoom_in"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="end"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/bg_overlay_circle_button"
+            android:contentDescription="@string/zoom_in_cta"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:padding="0dp"
+            android:text="@string/zoom_in_icon"
+            android:textAllCaps="false"
+            android:textSize="20sp" />
+
+        <Button
+            android:id="@+id/button_zoom_out"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="end"
+            android:background="@drawable/bg_overlay_circle_button"
+            android:contentDescription="@string/zoom_out_cta"
+            android:minWidth="48dp"
+            android:minHeight="48dp"
+            android:padding="0dp"
+            android:text="@string/zoom_out_icon"
+            android:textAllCaps="false"
+            android:textSize="20sp" />
+    </LinearLayout>
+
     <Button
         android:id="@+id/button_refresh_gps"
         android:layout_width="48dp"
@@ -80,7 +122,8 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:padding="16dp"
+        android:visibility="gone">
 
         <Button
             android:id="@+id/button_set_current_location"
@@ -194,7 +237,7 @@
             android:id="@+id/station_info_scrim"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#88000000" />
+            android:background="@android:color/transparent" />
 
         <LinearLayout
             android:id="@+id/station_info_sheet"

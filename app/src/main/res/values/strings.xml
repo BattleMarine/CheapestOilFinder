@@ -44,4 +44,8 @@
     <string name="station_info_subtitle_placeholder">상세 정보 준비 중</string>
     <string name="station_info_body_placeholder">선택한 주유소의 상세 정보는 추후 표시됩니다.</string>
     <string name="back_to_main_confirm_message">메인화면으로 나가려면 다시 뒤로가기를 누르세요.</string>
+    <string name="zoom_in_cta">확대</string>
+    <string name="zoom_out_cta">축소</string>
+    <string name="zoom_in_icon">+</string>
+    <string name="zoom_out_icon">-</string>
 </resources>
