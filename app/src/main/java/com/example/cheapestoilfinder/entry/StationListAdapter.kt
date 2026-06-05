@@ -3,17 +3,20 @@ package com.example.cheapestoilfinder.entry
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.cheapestoilfinder.R
 import com.example.cheapestoilfinder.map.model.GasStation
+import com.example.cheapestoilfinder.station.BrandLogoResolver
 import com.example.cheapestoilfinder.station.api.FuelType
 import java.util.Locale
 
-class StationListAdapter :
-    ListAdapter<GasStation, StationListAdapter.StationViewHolder>(DiffCallback) {
+class StationListAdapter(
+    private val onStationClick: (GasStation) -> Unit
+) : ListAdapter<GasStation, StationListAdapter.StationViewHolder>(DiffCallback) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): StationViewHolder {
         val view = LayoutInflater.from(parent.context)
@@ -25,17 +28,23 @@ class StationListAdapter :
         holder.bind(getItem(position))
     }
 
-    class StationViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        private val brandView: TextView = itemView.findViewById(R.id.text_brand)
+    inner class StationViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val brandLogoView: ImageView = itemView.findViewById(R.id.image_brand_logo)
         private val nameView: TextView = itemView.findViewById(R.id.text_station_name)
         private val priceView: TextView = itemView.findViewById(R.id.text_station_price)
         private val distanceValueView: TextView = itemView.findViewById(R.id.text_distance_value)
 
         fun bind(item: GasStation) {
-            brandView.text = normalizeBrandLabel(item.brand)
+            brandLogoView.setImageResource(BrandLogoResolver.fullLogoResId(item.brand))
+            brandLogoView.contentDescription = itemView.context.getString(
+                R.string.station_brand_logo_content_description
+            )
             nameView.text = shortenStationName(item.name)
             priceView.text = buildPriceText(item)
             distanceValueView.text = formatDistance(item.distanceMeters)
+            itemView.setOnClickListener {
+                onStationClick(item)
+            }
         }
 
         private fun buildPriceText(item: GasStation): String {
@@ -85,24 +94,10 @@ class StationListAdapter :
             }
         }
 
-        private fun normalizeBrandLabel(brand: String): String {
-            val normalized = brand.trim()
-            return when {
-                normalized.isBlank() -> "브랜드"
-                normalized.contains("S-OIL", ignoreCase = true) -> "S-OIL"
-                normalized.contains("SK", ignoreCase = true) -> "SK"
-                normalized.contains("GS", ignoreCase = true) -> "GS"
-                normalized.contains("HD", ignoreCase = true) ||
-                    normalized.contains("현대", ignoreCase = true) -> "HD"
-                normalized.contains("알뜰", ignoreCase = true) -> "알뜰"
-                else -> normalized.take(6)
-            }
-        }
-
         private fun shortenStationName(name: String): String {
             return name
                 .replace("직영", "")
-                .replace("셀프", "")
+                .replace("주유소", "")
                 .replace("  ", " ")
                 .trim()
                 .ifBlank { name }

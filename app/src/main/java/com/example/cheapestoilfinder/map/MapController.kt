@@ -12,7 +12,9 @@ interface MapController {
     fun onPause()
     fun moveCamera(point: LocationPoint, zoomLevel: Int)
     fun focusCurrentLocation(point: LocationPoint, zoomLevel: Int)
+    fun focusStation(point: LocationPoint, zoomLevel: Int)
     fun showStations(stations: List<GasStation>)
     fun showRoute(routeInfo: RouteInfo)
+    fun setOnStationSelectedListener(listener: ((GasStation) -> Unit)?)
     fun clearMapObjects()
 }

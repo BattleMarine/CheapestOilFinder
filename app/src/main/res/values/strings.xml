@@ -39,4 +39,9 @@
     <string name="station_list_subtitle">보통휘발유 가격이 낮은 순으로 정렬합니다.</string>
     <string name="station_list_empty">주변 주유소를 찾지 못했습니다.</string>
     <string name="station_list_distance_label">거리</string>
+    <string name="station_brand_logo_content_description">주유소 브랜드 로고</string>
+    <string name="station_info_title">주유소 정보 페이지</string>
+    <string name="station_info_subtitle_placeholder">상세 정보 준비 중</string>
+    <string name="station_info_body_placeholder">선택한 주유소의 상세 정보는 추후 표시됩니다.</string>
+    <string name="back_to_main_confirm_message">메인화면으로 나가려면 다시 뒤로가기를 누르세요.</string>
 </resources>
