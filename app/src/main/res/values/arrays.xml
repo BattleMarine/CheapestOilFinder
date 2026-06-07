@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="fuel_type_options">
-        <item>보통휘발유</item>
+    <string-array name="user_fuel_type_options">
         <item>고급휘발유</item>
+        <item>보통휘발유</item>
         <item>경유</item>
         <item>LPG</item>
-        <item>기타</item>
     </string-array>
 </resources>

@@ -43,6 +43,16 @@
             android:textStyle="bold"
             android:maxLines="1"
             android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/text_station_cost_summary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="#5F5147"
+            android:textSize="12sp"
+            android:maxLines="2"
+            android:ellipsize="end" />
     </LinearLayout>
 
     <LinearLayout

@@ -1,4 +1,4 @@
-package com.example.cheapestoilfinder.entry
+﻿package com.example.cheapestoilfinder.entry
 
 import android.app.Activity
 import android.Manifest
@@ -21,14 +21,18 @@ import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
+import com.example.cheapestoilfinder.map.model.StationCostSummary
 import com.example.cheapestoilfinder.station.BackendStationRepository
 import com.example.cheapestoilfinder.station.BrandLogoResolver
 import com.example.cheapestoilfinder.station.StationDisplayMapper
 import com.example.cheapestoilfinder.station.api.ApiCallback
-import com.example.cheapestoilfinder.station.api.FuelType
 import com.example.cheapestoilfinder.station.dto.NearbyStationSearchRequest
 import com.example.cheapestoilfinder.station.dto.StationDetailResponse
 import com.example.cheapestoilfinder.station.dto.StationSearchResponse
+import com.example.cheapestoilfinder.settings.CostCalculator
+import com.example.cheapestoilfinder.settings.UserFuelType
+import com.example.cheapestoilfinder.settings.UserPreferenceManager
+import com.example.cheapestoilfinder.settings.UserSettings
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import java.util.Locale
@@ -62,8 +66,7 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoPhoneValueView: TextView? = null
     private var stationInfoFuelContainer: LinearLayout? = null
     private var stationInfoRouteDistanceValueView: TextView? = null
-    private var stationInfoRoundTripValueView: TextView? = null
-    private var stationInfoRoundTripNoteView: TextView? = null
+    private var stationInfoCostContainer: LinearLayout? = null
     private var loadedStations: List<GasStation> = emptyList()
     private var selectedStation: GasStation? = null
     private var pendingGpsActionAfterPermission: (() -> Unit)? = null
@@ -82,9 +85,9 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoSheetDragging = false
     private var stationInfoSheetDragStartY = 0f
     private var stationInfoSheetDragStartTranslationY = 0f
-    private var stationPriceFuelType = FuelType.REGULAR_GASOLINE
+    private lateinit var preferenceManager: UserPreferenceManager
+    private var userSettings = UserSettings()
     private var lastMinimizedBackPressedAt = 0L
-    private val defaultFuelEfficiencyKmPerLiter = 10.0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,6 +115,8 @@ class CurrentLocationActivity : Activity() {
             mapController?.zoomOutFixedStep()
         }
         currentLocationActionsContainer = findViewById(R.id.current_location_actions_container)
+        preferenceManager = UserPreferenceManager.create(this)
+        userSettings = preferenceManager.loadSettings()
 
         configureStationListPanel()
         configureStationInfoPanel()
@@ -131,6 +136,7 @@ class CurrentLocationActivity : Activity() {
     override fun onResume() {
         super.onResume()
         mapController?.onResume()
+        reloadUserSettingsAndRefreshStations()
     }
 
     override fun onPause() {
@@ -145,6 +151,25 @@ class CurrentLocationActivity : Activity() {
 
         hasRequestedInitialLocation = true
         resolveCurrentLocation(autoSearchStations = true)
+    }
+
+    private fun reloadUserSettingsAndRefreshStations() {
+        if (!::preferenceManager.isInitialized) {
+            return
+        }
+
+        userSettings = preferenceManager.loadSettings()
+        if (loadedStations.isNotEmpty()) {
+            val decoratedStations = decorateStationsForCurrentPreferences(loadedStations)
+            loadedStations = decoratedStations
+            stationListAdapter.submitList(sortStationsForDisplay(decoratedStations))
+            selectedStation?.let { currentSelectedStation ->
+                val refreshedStation = decoratedStations.firstOrNull { it.id == currentSelectedStation.id }
+                    ?: decorateStationForCurrentPreferences(currentSelectedStation)
+                selectedStation = refreshedStation
+                renderStationInfo(refreshedStation)
+            }
+        }
     }
 
     private fun refreshCurrentLocationFromGps() {
@@ -217,15 +242,17 @@ class CurrentLocationActivity : Activity() {
             point.latitude,
             point.longitude,
             5000,
-            30.0,
-            10.0,
-            null,
+            userSettings.refuelAmountLiter,
+            userSettings.fuelEfficiencyKmPerLiter,
+            UserFuelType.values().map { it.backendFuelType },
             point.name
         )
 
         stationRepository?.searchNearbyStations(request, object : ApiCallback<StationSearchResponse> {
             override fun onSuccess(result: StationSearchResponse) {
-                val stations: List<GasStation> = StationDisplayMapper.toGasStations(result)
+                val stations: List<GasStation> = decorateStationsForCurrentPreferences(
+                    StationDisplayMapper.toGasStations(result)
+                )
                 Log.i(TAG, "Loaded stations around GPS location: ${stations.size}")
                 mapController?.showStations(stations)
                 showStationList(stations)
@@ -371,8 +398,7 @@ class CurrentLocationActivity : Activity() {
         stationInfoPhoneValueView = findViewById(R.id.station_info_phone_value)
         stationInfoFuelContainer = findViewById(R.id.station_info_fuel_container)
         stationInfoRouteDistanceValueView = findViewById(R.id.station_info_route_distance_value)
-        stationInfoRoundTripValueView = findViewById(R.id.station_info_round_trip_value)
-        stationInfoRoundTripNoteView = findViewById(R.id.station_info_round_trip_note)
+        stationInfoCostContainer = findViewById(R.id.station_info_cost_container)
 
         stationInfoContainer?.visibility = View.INVISIBLE
         stationInfoContainer?.post {
@@ -433,9 +459,8 @@ class CurrentLocationActivity : Activity() {
             getString(R.string.station_info_phone_placeholder)
         }
         stationInfoRouteDistanceValueView?.text = formatRouteDistance(station.distanceMeters)
-        stationInfoRoundTripValueView?.text = buildRoundTripCostText(station)
-        stationInfoRoundTripNoteView?.text = getString(R.string.station_info_round_trip_note)
         renderFuelRows(station)
+        renderCostRows(station)
     }
 
     private fun buildStationInfoSubtitle(station: GasStation): String {
@@ -476,6 +501,9 @@ class CurrentLocationActivity : Activity() {
             }
             prices.dieselWon?.takeIf { it > 0 }?.let {
                 add(getString(R.string.fuel_diesel) to it)
+            }
+            prices.lpgWon?.takeIf { it > 0 }?.let {
+                add(getString(R.string.fuel_type_lpg) to it)
             }
         }
     }
@@ -523,35 +551,60 @@ class CurrentLocationActivity : Activity() {
         }
     }
 
-    private fun resolveRoundTripFuelPrice(station: GasStation): Int? {
-        val prices = station.fuelPrices ?: return null
-        return prices.regularGasolineWon?.takeIf { it > 0 }
-            ?: prices.premiumGasolineWon?.takeIf { it > 0 }
-            ?: prices.dieselWon?.takeIf { it > 0 }
+    private fun renderCostRows(station: GasStation) {
+        val container = stationInfoCostContainer ?: return
+        container.removeAllViews()
+
+        val costSummary = station.costSummary
+        val rows = listOf(
+            getString(R.string.station_info_selected_fuel_label) to (
+                costSummary?.selectedFuelType?.displayLabel(this)
+                    ?: getString(R.string.station_info_cost_unavailable)
+            ),
+            getString(R.string.station_info_selected_fuel_price_label) to (
+                costSummary?.selectedFuelPricePerLiter?.takeIf { it > 0 }?.let {
+                    "${formatWon(it)}/L"
+                } ?: getString(R.string.station_info_cost_unavailable)
+            ),
+            getString(R.string.station_info_route_distance_label) to formatRouteDistance(station.distanceMeters),
+            getString(R.string.station_info_move_cost_label) to formatCostValue(costSummary?.moveCostWon),
+            getString(R.string.station_info_refuel_cost_label) to formatCostValue(costSummary?.refuelCostWon),
+            getString(R.string.station_info_total_expected_cost_label) to formatCostValue(costSummary?.totalExpectedCostWon)
+        )
+
+        rows.forEach { (label, value) ->
+            container.addView(buildCostRowView(label, value))
+        }
     }
 
-    private fun calculateRoundTripCost(distanceMeters: Int, pricePerLiter: Int, fuelEfficiencyKmPerLiter: Double): Int? {
-        if (distanceMeters <= 0 || pricePerLiter <= 0 || fuelEfficiencyKmPerLiter <= 0.0) {
-            return null
-        }
+    private fun buildCostRowView(label: String, value: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 12
+            }
 
-        val roundTripKilometers = (distanceMeters / 1000.0) * 2.0
-        val litersNeeded = roundTripKilometers / fuelEfficiencyKmPerLiter
-        return (litersNeeded * pricePerLiter).roundToInt()
+            addView(TextView(context).apply {
+                text = label
+                setTextColor(0xFF8A7C71.toInt())
+                textSize = 12f
+            })
+
+            addView(TextView(context).apply {
+                text = value
+                setTextColor(0xFF1F1A17.toInt())
+                textSize = 15f
+                setPadding(0, 4, 0, 0)
+            })
+        }
     }
 
-    private fun buildRoundTripCostText(station: GasStation): String {
-        val price = resolveRoundTripFuelPrice(station)
-        if (price == null) {
-            return getString(R.string.station_info_round_trip_unavailable)
-        }
-
-        val cost = calculateRoundTripCost(station.distanceMeters, price, defaultFuelEfficiencyKmPerLiter)
-        return if (cost == null) {
-            getString(R.string.station_info_round_trip_unavailable)
-        } else {
-            formatWon(cost)
-        }
+    private fun formatCostValue(cost: Int?): String {
+        return cost?.takeIf { it > 0 }?.let { "약 ${formatWon(it)}" }
+            ?: getString(R.string.station_info_cost_unavailable)
     }
 
     private fun expandStationInfo() {
@@ -680,7 +733,8 @@ class CurrentLocationActivity : Activity() {
             return
         }
 
-        val sortedStations = sortStationsForDisplay(stations)
+        val decoratedStations = decorateStationsForCurrentPreferences(stations)
+        val sortedStations = sortStationsForDisplay(decoratedStations)
         loadedStations = sortedStations
         stationListAdapter.submitList(sortedStations)
         stationListEmptyView?.visibility = if (sortedStations.isEmpty()) View.VISIBLE else View.GONE
@@ -705,11 +759,12 @@ class CurrentLocationActivity : Activity() {
             override fun onSuccess(result: StationDetailResponse) {
                 val detailStation = result.station?.let(StationDisplayMapper::toGasStation) ?: return
                 val mergedStation = mergeStationInfo(station, detailStation)
+                val decoratedStation = decorateStationForCurrentPreferences(mergedStation)
                 if (selectedStation?.id != stationId) {
                     return
                 }
-                selectedStation = mergedStation
-                renderStationInfo(mergedStation)
+                selectedStation = decoratedStation
+                renderStationInfo(decoratedStation)
             }
 
             override fun onError(error: Throwable) {
@@ -913,19 +968,69 @@ class CurrentLocationActivity : Activity() {
     private fun sortStationsForDisplay(stations: List<GasStation>): List<GasStation> {
         return stations.sortedWith(
             compareBy<GasStation> {
-                priceForFuelType(it, stationPriceFuelType) ?: Int.MAX_VALUE
+                it.costSummary?.totalExpectedCostWon ?: Int.MAX_VALUE
             }.thenBy { it.distanceMeters }
                 .thenBy { it.name }
         )
     }
 
-    private fun priceForFuelType(station: GasStation, fuelType: FuelType): Int? {
+    private fun decorateStationsForCurrentPreferences(stations: List<GasStation>): List<GasStation> {
+        return stations.map { decorateStationForCurrentPreferences(it) }
+    }
+
+    private fun decorateStationForCurrentPreferences(station: GasStation): GasStation {
+        val selectedFuelPrice = resolveSelectedFuelPrice(station)
+        val distanceMeters = station.distanceMeters.takeIf { it > 0 }
+        if (selectedFuelPrice == null || distanceMeters == null) {
+            if (distanceMeters == null) {
+                // TODO: route distance is unavailable from the backend. Do not substitute a fake distance.
+            }
+            return station.copy(
+                costSummary = StationCostSummary(
+                    selectedFuelType = userSettings.fuelType,
+                    selectedFuelPricePerLiter = selectedFuelPrice,
+                    distanceMeters = distanceMeters,
+                    distanceKm = distanceMeters?.div(1000.0),
+                    moveCostWon = null,
+                    refuelCostWon = null,
+                    totalExpectedCostWon = null,
+                    unavailableReason = getString(R.string.station_info_cost_unavailable)
+                )
+            )
+        }
+
+        val moveCost = CostCalculator.calculateMoveCost(
+            distanceMeters,
+            userSettings.fuelEfficiencyKmPerLiter,
+            selectedFuelPrice
+        )
+        val refuelCost = CostCalculator.calculateRefuelCost(
+            userSettings.refuelAmountLiter,
+            selectedFuelPrice
+        )
+        val totalCost = CostCalculator.calculateTotalExpectedCost(moveCost, refuelCost)
+
+        return station.copy(
+            costSummary = StationCostSummary(
+                selectedFuelType = userSettings.fuelType,
+                selectedFuelPricePerLiter = selectedFuelPrice,
+                distanceMeters = distanceMeters,
+                distanceKm = distanceMeters / 1000.0,
+                moveCostWon = moveCost,
+                refuelCostWon = refuelCost,
+                totalExpectedCostWon = totalCost,
+                unavailableReason = if (totalCost == null) getString(R.string.station_info_cost_unavailable) else null
+            )
+        )
+    }
+
+    private fun resolveSelectedFuelPrice(station: GasStation): Int? {
         val prices = station.fuelPrices ?: return null
-        return when (fuelType) {
-            FuelType.REGULAR_GASOLINE -> prices.regularGasolineWon
-            FuelType.PREMIUM_GASOLINE -> prices.premiumGasolineWon
-            FuelType.DIESEL -> prices.dieselWon
-            FuelType.LPG -> prices.lpgWon
+        return when (userSettings.fuelType) {
+            UserFuelType.GAS_HIGH -> prices.premiumGasolineWon
+            UserFuelType.GAS_LOW -> prices.regularGasolineWon
+            UserFuelType.DIESEL -> prices.dieselWon
+            UserFuelType.LPG -> prices.lpgWon
         }?.takeIf { it > 0 }
     }
 
@@ -1090,3 +1195,6 @@ private enum class StationSheetState {
     EXPANDED,
     MINIMIZED
 }
+
+
+

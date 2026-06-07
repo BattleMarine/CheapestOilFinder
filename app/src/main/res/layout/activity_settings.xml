@@ -47,11 +47,27 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
+            android:text="@string/settings_fuel_type_label"
+            android:textColor="#3E3834"
+            android:textStyle="bold" />
+
+        <Spinner
+            android:id="@+id/spinner_fuel_type"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:entries="@array/user_fuel_type_options"
+            android:spinnerMode="dropdown" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
             android:text="@string/settings_efficiency_label"
             android:textColor="#3E3834"
             android:textStyle="bold" />
 
         <EditText
+            android:id="@+id/edit_fuel_efficiency"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/settings_placeholder_efficiency"
@@ -67,49 +83,20 @@
             android:textStyle="bold" />
 
         <EditText
+            android:id="@+id/edit_refuel_amount"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/settings_placeholder_fuel_amount"
             android:inputType="numberDecimal"
             android:padding="14dp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/settings_fuel_type_label"
-            android:textColor="#3E3834"
-            android:textStyle="bold" />
-
-        <Spinner
-            android:id="@+id/spinner_fuel_type"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:entries="@array/fuel_type_options"
-            android:spinnerMode="dropdown" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:text="@string/settings_discount_label"
-            android:textColor="#3E3834"
-            android:textStyle="bold" />
-
-        <EditText
-            android:layout_width="match_parent"
-            android:layout_height="120dp"
-            android:gravity="top|start"
-            android:hint="@string/settings_placeholder_discount"
-            android:inputType="textMultiLine"
-            android:padding="14dp" />
-
         <Button
+            android:id="@+id/button_save_settings"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
             android:backgroundTint="#C96A18"
-            android:text="@string/settings_save_placeholder"
+            android:text="@string/settings_save_button"
             android:textAllCaps="false"
             android:textColor="#FFFFFF" />
 

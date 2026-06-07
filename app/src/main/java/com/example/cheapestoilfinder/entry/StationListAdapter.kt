@@ -11,7 +11,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.cheapestoilfinder.R
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.station.BrandLogoResolver
-import com.example.cheapestoilfinder.station.api.FuelType
 import java.util.Locale
 
 class StationListAdapter(
@@ -32,6 +31,7 @@ class StationListAdapter(
         private val brandLogoView: ImageView = itemView.findViewById(R.id.image_brand_logo)
         private val nameView: TextView = itemView.findViewById(R.id.text_station_name)
         private val priceView: TextView = itemView.findViewById(R.id.text_station_price)
+        private val costSummaryView: TextView = itemView.findViewById(R.id.text_station_cost_summary)
         private val distanceValueView: TextView = itemView.findViewById(R.id.text_distance_value)
 
         fun bind(item: GasStation) {
@@ -40,46 +40,58 @@ class StationListAdapter(
                 R.string.station_brand_logo_content_description
             )
             nameView.text = shortenStationName(item.name)
-            priceView.text = buildPriceText(item)
+            priceView.text = buildSelectedFuelPriceText(item)
+            costSummaryView.text = buildCostSummaryText(item)
             distanceValueView.text = formatDistance(item.distanceMeters)
             itemView.setOnClickListener {
                 onStationClick(item)
             }
         }
 
-        private fun buildPriceText(item: GasStation): String {
-            val prices = item.fuelPrices
-            val regularPrice = prices?.regularGasolineWon?.takeIf { it > 0 }
-            val premiumPrice = prices?.premiumGasolineWon?.takeIf { it > 0 }
-            val dieselPrice = prices?.dieselWon?.takeIf { it > 0 }
-            val fallbackPrice = item.pricePerLiter.takeIf { it > 0 }
+        private fun buildSelectedFuelPriceText(item: GasStation): String {
+            val summary = item.costSummary
+            val label = summary?.selectedFuelType?.displayLabel(itemView.context)
+                ?: resolveFallbackFuelLabel(item)
+            val price = summary?.selectedFuelPricePerLiter?.takeIf { it > 0 }
 
-            return when {
-                regularPrice != null && premiumPrice != null ->
-                    "휘발유(고급) ${formatWon(regularPrice)}(${formatWon(premiumPrice)})"
-                regularPrice != null ->
-                    "휘발유 ${formatWon(regularPrice)}"
-                premiumPrice != null ->
-                    "고급휘발유 ${formatWon(premiumPrice)}"
-                dieselPrice != null ->
-                    "디젤 ${formatWon(dieselPrice)}"
-                fallbackPrice != null && item.fuelType.isNotBlank() ->
-                    "${item.fuelType.toFuelLabel()} ${formatWon(fallbackPrice)}"
-                fallbackPrice != null ->
-                    formatWon(fallbackPrice)
-                else ->
-                    "가격 정보 없음"
+            return if (price != null) {
+                itemView.context.getString(
+                    R.string.station_list_fuel_price_format,
+                    label,
+                    formatWon(price)
+                )
+            } else {
+                "$label ${itemView.context.getString(R.string.station_info_cost_unavailable)}"
             }
         }
 
-        private fun String.toFuelLabel(): String {
-            return when (this) {
-                FuelType.REGULAR_GASOLINE.name -> "휘발유"
-                FuelType.PREMIUM_GASOLINE.name -> "고급휘발유"
-                FuelType.DIESEL.name -> "디젤"
-                FuelType.LPG.name -> "LPG"
-                else -> this
+        private fun buildCostSummaryText(item: GasStation): String {
+            val summary = item.costSummary ?: return itemView.context.getString(R.string.station_list_cost_summary_unavailable)
+            val distanceText = summary.distanceMeters?.takeIf { it > 0 }?.let { formatDistance(it) }
+                ?: itemView.context.getString(R.string.station_info_distance_unavailable)
+            val moveCostText = formatCostText(summary.moveCostWon)
+            val refuelCostText = formatCostText(summary.refuelCostWon)
+            val totalCostText = formatCostText(summary.totalExpectedCostWon)
+
+            if (moveCostText == itemView.context.getString(R.string.station_info_cost_unavailable) &&
+                refuelCostText == itemView.context.getString(R.string.station_info_cost_unavailable) &&
+                totalCostText == itemView.context.getString(R.string.station_info_cost_unavailable)
+            ) {
+                return itemView.context.getString(R.string.station_list_cost_summary_unavailable)
             }
+
+            return itemView.context.getString(
+                R.string.station_list_cost_summary_format,
+                distanceText,
+                moveCostText,
+                refuelCostText,
+                totalCostText
+            )
+        }
+
+        private fun formatCostText(cost: Int?): String {
+            return cost?.takeIf { it > 0 }?.let { "약 ${formatWon(it)}" }
+                ?: itemView.context.getString(R.string.station_info_cost_unavailable)
         }
 
         private fun formatWon(value: Int): String {
@@ -101,6 +113,16 @@ class StationListAdapter(
                 .replace("  ", " ")
                 .trim()
                 .ifBlank { name }
+        }
+
+        private fun resolveFallbackFuelLabel(item: GasStation): String {
+            return when (item.fuelType) {
+                "PREMIUM_GASOLINE" -> itemView.context.getString(R.string.fuel_type_gas_high)
+                "REGULAR_GASOLINE" -> itemView.context.getString(R.string.fuel_type_gas_low)
+                "DIESEL" -> itemView.context.getString(R.string.fuel_type_diesel)
+                "LPG" -> itemView.context.getString(R.string.fuel_type_lpg)
+                else -> item.fuelType.ifBlank { itemView.context.getString(R.string.fuel_type_gas_low) }
+            }
         }
     }
 
