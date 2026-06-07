@@ -9,6 +9,8 @@ import android.location.Location
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -20,13 +22,16 @@ import com.example.cheapestoilfinder.map.MapScreenMode
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.station.BackendStationRepository
+import com.example.cheapestoilfinder.station.BrandLogoResolver
 import com.example.cheapestoilfinder.station.StationDisplayMapper
 import com.example.cheapestoilfinder.station.api.ApiCallback
 import com.example.cheapestoilfinder.station.api.FuelType
 import com.example.cheapestoilfinder.station.dto.NearbyStationSearchRequest
+import com.example.cheapestoilfinder.station.dto.StationDetailResponse
 import com.example.cheapestoilfinder.station.dto.StationSearchResponse
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import java.util.Locale
 
 class CurrentLocationActivity : Activity() {
     private var mapController: KakaoMapController? = null
@@ -51,7 +56,14 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoScrim: View? = null
     private var stationInfoTitleView: TextView? = null
     private var stationInfoSubtitleView: TextView? = null
-    private var stationInfoBodyView: TextView? = null
+    private var stationInfoBrandLogoView: ImageView? = null
+    private var stationInfoNameValueView: TextView? = null
+    private var stationInfoAddressValueView: TextView? = null
+    private var stationInfoPhoneValueView: TextView? = null
+    private var stationInfoFuelContainer: LinearLayout? = null
+    private var stationInfoRouteDistanceValueView: TextView? = null
+    private var stationInfoRoundTripValueView: TextView? = null
+    private var stationInfoRoundTripNoteView: TextView? = null
     private var loadedStations: List<GasStation> = emptyList()
     private var selectedStation: GasStation? = null
     private var pendingGpsActionAfterPermission: (() -> Unit)? = null
@@ -72,6 +84,7 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoSheetDragStartTranslationY = 0f
     private var stationPriceFuelType = FuelType.REGULAR_GASOLINE
     private var lastMinimizedBackPressedAt = 0L
+    private val defaultFuelEfficiencyKmPerLiter = 10.0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -352,7 +365,14 @@ class CurrentLocationActivity : Activity() {
         stationInfoScrim = findViewById(R.id.station_info_scrim)
         stationInfoTitleView = findViewById(R.id.station_info_title)
         stationInfoSubtitleView = findViewById(R.id.station_info_subtitle)
-        stationInfoBodyView = findViewById(R.id.station_info_body)
+        stationInfoBrandLogoView = findViewById(R.id.station_info_brand_logo)
+        stationInfoNameValueView = findViewById(R.id.station_info_name_value)
+        stationInfoAddressValueView = findViewById(R.id.station_info_address_value)
+        stationInfoPhoneValueView = findViewById(R.id.station_info_phone_value)
+        stationInfoFuelContainer = findViewById(R.id.station_info_fuel_container)
+        stationInfoRouteDistanceValueView = findViewById(R.id.station_info_route_distance_value)
+        stationInfoRoundTripValueView = findViewById(R.id.station_info_round_trip_value)
+        stationInfoRoundTripNoteView = findViewById(R.id.station_info_round_trip_note)
 
         stationInfoContainer?.visibility = View.INVISIBLE
         stationInfoContainer?.post {
@@ -378,9 +398,7 @@ class CurrentLocationActivity : Activity() {
 
     private fun showStationInfo(station: GasStation) {
         selectedStation = station
-        stationInfoTitleView?.text = station.name
-        stationInfoSubtitleView?.text = station.brand.ifBlank { getString(R.string.station_info_subtitle_placeholder) }
-        stationInfoBodyView?.text = getString(R.string.station_info_body_placeholder)
+        renderStationInfo(station)
 
         if (stationInfoSheetHeightPx <= 0) {
             stationInfoContainer?.post {
@@ -401,6 +419,139 @@ class CurrentLocationActivity : Activity() {
             .start()
         stationInfoSheetState = StationSheetState.COLLAPSED
         updateCurrentLocationActionsVisibility()
+    }
+
+    private fun renderStationInfo(station: GasStation) {
+        stationInfoTitleView?.text = station.name.ifBlank { getString(R.string.station_info_subtitle_placeholder) }
+        stationInfoSubtitleView?.text = buildStationInfoSubtitle(station)
+        stationInfoBrandLogoView?.setImageResource(BrandLogoResolver.fullLogoResId(station.brand))
+        stationInfoNameValueView?.text = station.name.ifBlank { getString(R.string.station_info_subtitle_placeholder) }
+        stationInfoAddressValueView?.text = station.locationPoint.address.ifBlank {
+            getString(R.string.station_info_body_placeholder)
+        }
+        stationInfoPhoneValueView?.text = station.phone.ifBlank {
+            getString(R.string.station_info_phone_placeholder)
+        }
+        stationInfoRouteDistanceValueView?.text = formatRouteDistance(station.distanceMeters)
+        stationInfoRoundTripValueView?.text = buildRoundTripCostText(station)
+        stationInfoRoundTripNoteView?.text = getString(R.string.station_info_round_trip_note)
+        renderFuelRows(station)
+    }
+
+    private fun buildStationInfoSubtitle(station: GasStation): String {
+        val brandText = station.brand.ifBlank { getString(R.string.station_info_subtitle_placeholder) }
+        val distanceText = formatRouteDistance(station.distanceMeters)
+        return if (distanceText.isBlank()) {
+            brandText
+        } else {
+            "$brandText · $distanceText"
+        }
+    }
+
+    private fun formatRouteDistance(distanceMeters: Int): String {
+        if (distanceMeters <= 0) {
+            return getString(R.string.station_info_distance_unavailable)
+        }
+
+        return if (distanceMeters < 1000) {
+            getString(R.string.distance_format_meter, distanceMeters)
+        } else {
+            val kilometers = distanceMeters / 1000.0
+            getString(R.string.distance_format_kilometer, kilometers)
+        }
+    }
+
+    private fun formatWon(amount: Int): String {
+        return String.format(Locale.KOREA, "%,d원", amount)
+    }
+
+    private fun resolveDisplayFuelPrices(station: GasStation): List<Pair<String, Int>> {
+        val prices = station.fuelPrices ?: return emptyList()
+        return buildList {
+            prices.regularGasolineWon?.takeIf { it > 0 }?.let {
+                add(getString(R.string.fuel_regular_gasoline) to it)
+            }
+            prices.premiumGasolineWon?.takeIf { it > 0 }?.let {
+                add(getString(R.string.fuel_premium_gasoline) to it)
+            }
+            prices.dieselWon?.takeIf { it > 0 }?.let {
+                add(getString(R.string.fuel_diesel) to it)
+            }
+        }
+    }
+
+    private fun renderFuelRows(station: GasStation) {
+        val container = stationInfoFuelContainer ?: return
+        container.removeAllViews()
+
+        val rows = resolveDisplayFuelPrices(station)
+        if (rows.isEmpty()) {
+            val placeholder = TextView(this).apply {
+                text = getString(R.string.station_info_fuel_unavailable)
+                setTextColor(0xFF1F1A17.toInt())
+                textSize = 14f
+            }
+            container.addView(placeholder)
+            return
+        }
+
+        rows.forEach { (label, price) ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            val labelView = TextView(this).apply {
+                text = label
+                setTextColor(0xFF8A7C71.toInt())
+                textSize = 13f
+            }
+
+            val priceView = TextView(this).apply {
+                text = formatWon(price)
+                setTextColor(0xFF1F1A17.toInt())
+                textSize = 15f
+                setPadding(16, 0, 0, 0)
+            }
+
+            row.addView(labelView)
+            row.addView(priceView)
+            container.addView(row)
+        }
+    }
+
+    private fun resolveRoundTripFuelPrice(station: GasStation): Int? {
+        val prices = station.fuelPrices ?: return null
+        return prices.regularGasolineWon?.takeIf { it > 0 }
+            ?: prices.premiumGasolineWon?.takeIf { it > 0 }
+            ?: prices.dieselWon?.takeIf { it > 0 }
+    }
+
+    private fun calculateRoundTripCost(distanceMeters: Int, pricePerLiter: Int, fuelEfficiencyKmPerLiter: Double): Int? {
+        if (distanceMeters <= 0 || pricePerLiter <= 0 || fuelEfficiencyKmPerLiter <= 0.0) {
+            return null
+        }
+
+        val roundTripKilometers = (distanceMeters / 1000.0) * 2.0
+        val litersNeeded = roundTripKilometers / fuelEfficiencyKmPerLiter
+        return (litersNeeded * pricePerLiter).roundToInt()
+    }
+
+    private fun buildRoundTripCostText(station: GasStation): String {
+        val price = resolveRoundTripFuelPrice(station)
+        if (price == null) {
+            return getString(R.string.station_info_round_trip_unavailable)
+        }
+
+        val cost = calculateRoundTripCost(station.distanceMeters, price, defaultFuelEfficiencyKmPerLiter)
+        return if (cost == null) {
+            getString(R.string.station_info_round_trip_unavailable)
+        } else {
+            formatWon(cost)
+        }
     }
 
     private fun expandStationInfo() {
@@ -534,13 +685,52 @@ class CurrentLocationActivity : Activity() {
         stationListAdapter.submitList(sortedStations)
         stationListEmptyView?.visibility = if (sortedStations.isEmpty()) View.VISIBLE else View.GONE
         stationListRecycler?.visibility = if (sortedStations.isEmpty()) View.GONE else View.VISIBLE
-        presentStationList()
+        showStationListMinimized()
     }
 
     private fun openStationInfo(station: GasStation) {
         Log.i(TAG, "Opening station info for: ${station.id}")
         mapController?.focusStation(station.locationPoint, 15)
         showStationInfo(station)
+        requestStationDetail(station)
+    }
+
+    private fun requestStationDetail(station: GasStation) {
+        val stationId = station.id
+        if (stationId.isBlank()) {
+            return
+        }
+
+        stationRepository?.getStationDetail(stationId, object : ApiCallback<StationDetailResponse> {
+            override fun onSuccess(result: StationDetailResponse) {
+                val detailStation = result.station?.let(StationDisplayMapper::toGasStation) ?: return
+                val mergedStation = mergeStationInfo(station, detailStation)
+                if (selectedStation?.id != stationId) {
+                    return
+                }
+                selectedStation = mergedStation
+                renderStationInfo(mergedStation)
+            }
+
+            override fun onError(error: Throwable) {
+                Log.w(TAG, "Failed to load station detail for $stationId", error)
+            }
+        })
+    }
+
+    private fun mergeStationInfo(base: GasStation, detail: GasStation): GasStation {
+        return base.copy(
+            name = detail.name.ifBlank { base.name },
+            brand = detail.brand.ifBlank { base.brand },
+            fuelType = if (detail.fuelType.isBlank()) base.fuelType else detail.fuelType,
+            pricePerLiter = if (detail.pricePerLiter > 0) detail.pricePerLiter else base.pricePerLiter,
+            distanceMeters = if (detail.distanceMeters > 0) detail.distanceMeters else base.distanceMeters,
+            locationPoint = detail.locationPoint.takeIf {
+                it.latitude != 0.0 || it.longitude != 0.0 || it.address.isNotBlank() || it.name.isNotBlank()
+            } ?: base.locationPoint,
+            fuelPrices = detail.fuelPrices ?: base.fuelPrices,
+            phone = detail.phone.ifBlank { base.phone }
+        )
     }
 
     private fun expandStationList() {
@@ -576,6 +766,21 @@ class CurrentLocationActivity : Activity() {
             .setDuration(220L)
             .start()
         updateStationActionsOffset(stationSheetPeekHeightPx.toFloat())
+    }
+
+    private fun showStationListMinimized() {
+        val container = stationListContainer ?: return
+        val sheet = stationListSheet ?: return
+
+        container.visibility = View.VISIBLE
+        container.bringToFront()
+        sheet.animate().cancel()
+        sheet.translationY = stationSheetMinimizedTranslationY
+        hideStationListScrim()
+        stationSheetDragging = false
+        stationSheetState = StationSheetState.MINIMIZED
+        updateCurrentLocationActionsVisibility()
+        updateStationActionsOffset(0f)
     }
 
     private fun minimizeStationList(animated: Boolean) {

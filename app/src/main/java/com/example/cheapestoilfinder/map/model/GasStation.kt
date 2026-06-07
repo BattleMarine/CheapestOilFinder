@@ -10,5 +10,6 @@ data class GasStation(
     val pricePerLiter: Int,
     val distanceMeters: Int,
     val locationPoint: LocationPoint,
-    val fuelPrices: FuelPriceSummary? = null
+    val fuelPrices: FuelPriceSummary? = null,
+    val phone: String = ""
 )

@@ -8,6 +8,7 @@ data class StationSearchItem(
     var stationName: String? = null,
     var brandName: String? = null,
     var address: String? = null,
+    var phone: String? = null,
     var latitude: Double = 0.0,
     var longitude: Double = 0.0,
     var coordinateSystem: String? = null,
@@ -19,5 +20,6 @@ data class StationSearchItem(
     var estimatedTravelFuelCostWon: Int? = null,
     var estimatedTotalCostWon: Int? = null,
     var routeExtraDistanceMeters: Int? = null,
+    var notes: List<String>? = null,
     var updatedAt: String? = null
 )

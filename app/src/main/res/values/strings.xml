@@ -48,4 +48,21 @@
     <string name="zoom_out_cta">축소</string>
     <string name="zoom_in_icon">+</string>
     <string name="zoom_out_icon">-</string>
+    <string name="station_info_brand_label">브랜드</string>
+    <string name="station_info_name_label">상호명</string>
+    <string name="station_info_address_label">도로명주소</string>
+    <string name="station_info_phone_label">전화번호</string>
+    <string name="station_info_phone_placeholder">010-0000-0000 (임시)</string>
+    <string name="station_info_fuel_label">유가 정보</string>
+    <string name="station_info_route_distance_label">경로상 편도거리</string>
+    <string name="station_info_round_trip_label">왕복비용</string>
+    <string name="station_info_round_trip_note">10km/L 임시 연비 기준</string>
+    <string name="station_info_fuel_unavailable">유가 정보가 준비되지 않았습니다.</string>
+    <string name="station_info_distance_unavailable">거리 정보가 준비되지 않았습니다.</string>
+    <string name="station_info_round_trip_unavailable">왕복비용 계산 정보가 준비되지 않았습니다.</string>
+    <string name="fuel_regular_gasoline">보통휘발유</string>
+    <string name="fuel_premium_gasoline">고급휘발유</string>
+    <string name="fuel_diesel">디젤</string>
+    <string name="distance_format_meter">%1$dm</string>
+    <string name="distance_format_kilometer">%1$.2fkm</string>
 </resources>
