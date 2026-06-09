@@ -28,6 +28,8 @@
     <string name="destination_search_results_title">검색 결과</string>
     <string name="destination_search_results_empty">검색 결과가 없습니다.</string>
     <string name="destination_search_results_count_format">%1$d개</string>
+    <string name="route_recommendation_title">낮은 경유 비용</string>
+    <string name="route_recommendation_empty">추천 주유소를 찾지 못했습니다.</string>
     <string name="search_overlay_close">검색 닫기</string>
     <string name="settings_title">설정 입력</string>
     <string name="settings_subtitle">차량 정보와 기본값을 입력하는 화면입니다.</string>

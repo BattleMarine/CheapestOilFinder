@@ -1,145 +1,93 @@
 # 프론트엔드-백엔드 API 가이드
 
-이 문서는 안드로이드 프론트엔드가 백엔드에 요청을 보내는 방법을 정리한 문서입니다.
+이 문서는 Android 프론트엔드가 CheapestOilFinder Backend를 호출할 때 사용하는 API 계약을 정리합니다.
 
-핵심 흐름은 다음과 같습니다.
+## 공통 규칙
 
-1. 프론트엔드가 현재 위치와 목적지 좌표를 백엔드에 보냅니다.
-2. 백엔드가 네이버 길찾기 API를 대신 호출해 경로를 계산합니다.
-3. 백엔드가 경로 정보와 주변 주유소 정보를 함께 반환합니다.
-4. 프론트엔드는 받은 결과를 지도와 리스트에 표시합니다.
+- 좌표는 모두 WGS84 기준의 `latitude` / `longitude`를 사용합니다.
+- 프론트엔드는 오피넷, 네이버 Directions, 카카오 Local API를 직접 호출하지 않습니다.
+- 백엔드 기본 주소는 빌드 시 `secrets/backend_base_url.txt`에서 읽습니다.
+- 로컬 에뮬레이터 기본 주소는 `http://10.0.2.2:8080/`입니다.
+- 실기기나 Cloudflare Tunnel을 쓸 때는 `secrets/backend_base_url.txt`를 바꾼 뒤 앱을 다시 빌드합니다.
 
----
+## 1. 주변 주유소 조회
 
-## 1. 공통 규칙
-
-- 좌표는 모두 `WGS84` 기준의 `위도(latitude) / 경도(longitude)`를 사용합니다.
-- 백엔드는 내부적으로 네이버 길찾기 API를 호출할 때만 `경도,위도` 순서로 바꿉니다.
-- 프론트엔드는 백엔드 주소를 하드코딩하지 말고 설정값으로 관리하는 것을 권장합니다.
-- Android Emulator 기본 주소는 `http://10.0.2.2:8080/`입니다.
-- 같은 Wi-Fi의 실기기 테스트에서는 `secrets/backend_base_url.txt`에 적힌 주소를 우선 사용합니다.
-- release 빌드에서는 HTTP가 막힐 수 있으므로, 운영 환경은 HTTPS를 권장합니다.
-
-### 백엔드 주소 예시
-
-- 에뮬레이터: `http://10.0.2.2:8080/`
-- 같은 Wi-Fi 실기기: `http://192.168.0.10:8080/`
-- Cloudflare Tunnel: `https://xxxx.trycloudflare.com/`
-
----
-
-## 2. 프론트엔드가 주로 쓰는 API
-
-### 2-1. 주변 주유소 조회
-
-현재 위치 기준으로 반경 안의 주유소를 가져옵니다.
-
-#### 요청
+현재 위치 기준 반경 안의 주유소를 조회합니다.
 
 ```http
 GET /api/stations/nearby
 ```
 
-#### 쿼리 파라미터
+### Query
 
-- `latitude` : 현재 위치 위도
-- `longitude` : 현재 위치 경도
-- `radiusMeters` : 조회 반경 미터 단위
-- `fuelAmountLiters` : 예상 주유량
-- `fuelEfficiencyKmPerLiter` : 차량 연비
-- `fuelTypes` : 조회할 유종 목록
-- `sortOrder` : 정렬 방식 (`DISTANCE_ASC`, `CHEAPEST_FUEL_ASC`, `ESTIMATED_TOTAL_COST_ASC`)
-- 예전 요청에서 쓰던 `PRICE_ASC` 는 하위 호환 별칭으로 백엔드가 `CHEAPEST_FUEL_ASC` 로 받아줍니다.
-- `referenceLabel` : 화면에 표시할 기준 위치 이름
+| 이름 | 설명 |
+| --- | --- |
+| `latitude` | 기준 위치 위도 |
+| `longitude` | 기준 위치 경도 |
+| `radiusMeters` | 조회 반경, 미터 단위 |
+| `radiusKm` | 조회 반경, km 단위. `radiusMeters`가 있으면 `radiusMeters`가 우선 |
+| `fuelAmountLiters` | 1회 주유량 |
+| `fuelEfficiencyKmPerLiter` | 차량 연비 |
+| `fuelTypes` | 조회할 유종. 여러 번 전달 가능 |
+| `sortOrder` | `DISTANCE_ASC`, `CHEAPEST_FUEL_ASC`, `ESTIMATED_TOTAL_COST_ASC` |
+| `referenceLabel` | 화면 표시용 기준 위치 이름 |
 
-#### 예시
-
-```text
-GET /api/stations/nearby?latitude=37.4979&longitude=127.0276&radiusMeters=5000&fuelAmountLiters=45.0&fuelEfficiencyKmPerLiter=12.3&fuelTypes=REGULAR_GASOLINE&fuelTypes=PREMIUM_GASOLINE&fuelTypes=DIESEL&sortOrder=DISTANCE_ASC&referenceLabel=%ED%98%84%EC%9E%AC%20%EC%9C%84%EC%B9%98
-```
-
-#### cURL 예시
+### 예시
 
 ```bash
-curl -X GET "http://localhost:8080/api/stations/nearby?latitude=37.4979&longitude=127.0276&radiusMeters=5000&fuelAmountLiters=45.0&fuelEfficiencyKmPerLiter=12.3&fuelTypes=REGULAR_GASOLINE&fuelTypes=PREMIUM_GASOLINE&fuelTypes=DIESEL&sortOrder=DISTANCE_ASC&referenceLabel=%ED%98%84%EC%9E%AC%20%EC%9C%84%EC%B9%98"
+curl "http://localhost:8080/api/stations/nearby?latitude=37.4979&longitude=127.0276&radiusMeters=5000&fuelTypes=REGULAR_GASOLINE&fuelTypes=DIESEL&sortOrder=DISTANCE_ASC"
 ```
 
-#### 응답 개요
+## 2. 경로 조회
 
-- `searchMode`: `NEARBY`
-- `coordinateSystem`: `WGS84`
-- `radiusKm`: 조회 반경 km
-- `resultCount`: 주유소 개수
-- `referenceLabel`: 기준 위치 이름
-- `stations[]`: 주유소 목록
-
-#### 주유소 항목 예시
-
-```json
-{
-  "stationId": "A0012345",
-  "stationName": "예시주유소",
-  "brandName": "SK",
-  "address": "서울특별시 강남구 ...",
-  "phone": "02-123-4567",
-  "latitude": 37.4979,
-  "longitude": 127.0276,
-  "coordinateSystem": "WGS84",
-  "distanceMeters": 820,
-  "distanceBasis": "REFERENCE_POINT",
-  "fuelPrices": {
-    "regularGasolineWon": 1678,
-    "premiumGasolineWon": 1789,
-    "dieselWon": 1544,
-    "lpgWon": null,
-    "updatedAt": "2026-06-08T10:00:00"
-  },
-  "cheapestFuelType": "DIESEL",
-  "cheapestFuelPriceWon": 1544,
-  "estimatedTravelFuelCostWon": 16960,
-  "estimatedTotalCostWon": 18480,
-  "routeExtraDistanceMeters": null,
-  "notes": [
-    "좌표계: WGS84",
-    "거리 기준: REFERENCE_POINT",
-    "유가 최신 시각: 2026-06-08T10:00:00",
-    "전화번호 등록됨"
-  ],
-  "updatedAt": "2026-06-08T10:00:00"
-}
-```
-
----
-
-## 3. 경로 요청 API
-
-이 API가 이번에 추가된 핵심입니다.
-
-프론트엔드가 현재 위치와 목적지 좌표를 보내면, 백엔드가 네이버 길찾기 API를 대신 호출해서 경로를 계산하고 반환합니다.
-
-### 3-1. 요청
+현재 위치와 목적지 좌표를 보내면 백엔드가 네이버 Directions 5를 호출해 자동차 경로를 계산합니다.
 
 ```http
 POST /api/stations/route
 Content-Type: application/json
 ```
 
-### 3-2. 요청 본문
+### 요청 필드
 
-- `originLatitude` : 출발지 위도
-- `originLongitude` : 출발지 경도
-- `destinationLatitude` : 목적지 위도
-- `destinationLongitude` : 목적지 경도
-- `routePolyline` : 선택값, 이미 경로가 있으면 전달 가능하고 없어도 됨
-- `radiusKm` : 경로 주변에서 검색할 반경 km
-- `fuelAmountLiters` : 예상 주유량
-- `fuelEfficiencyKmPerLiter` : 차량 연비
-- `fuelTypes` : 조회할 유종 목록
-- `sortOrder` : 정렬 방식
-- `originLabel` : 출발지 이름
-- `destinationLabel` : 목적지 이름
+| 이름 | 설명 |
+| --- | --- |
+| `originLatitude` | 출발지 위도 |
+| `originLongitude` | 출발지 경도 |
+| `destinationLatitude` | 목적지 위도 |
+| `destinationLongitude` | 목적지 경도 |
+| `routePolyline` | 선택값. 이미 경로 polyline이 있으면 전달 가능 |
+| `radiusMeters` | 경로 주변 주유소 조회 반경, 미터 단위 |
+| `radiusKm` | 경로 주변 주유소 조회 반경, km 단위 |
+| `fuelAmountLiters` | 1회 주유량 |
+| `fuelEfficiencyKmPerLiter` | 차량 연비 |
+| `fuelTypes` | 조회할 유종 목록 |
+| `sortOrder` | 정렬 방식 |
+| `routeResultMode` | 경로 응답 모드 |
+| `originLabel` | 출발지 표시 이름 |
+| `destinationLabel` | 목적지 표시 이름 |
 
-### 3-3. 요청 예시
+### `routeResultMode`
+
+`routeResultMode`는 경로 API가 주유소 목록까지 같이 내려줄지 결정합니다.
+
+| 값 | 동작 |
+| --- | --- |
+| `ROUTE_ONLY` | 경로만 계산해 `route`를 반환하고 `stations[]`는 빈 배열로 반환 |
+| `ROUTE_WITH_STATIONS` | 경로를 계산한 뒤 경로 주변 주유소 top 5를 추천해 `route`와 `stations[]`를 함께 반환 |
+
+값을 보내지 않으면 기존 호환을 위해 `ROUTE_WITH_STATIONS`로 처리됩니다.
+
+목적지 확정 직후 지도에 경로선만 빠르게 그릴 때는 `ROUTE_ONLY`를 사용하고, 목적지 기반 주유소 탐색 화면에서 경로 주변 주유소까지 필요할 때는 `ROUTE_WITH_STATIONS`를 사용합니다.
+
+`ROUTE_WITH_STATIONS`는 백엔드에서 다음 순서로 후보를 줄입니다.
+
+1. 기본 현위치-목적지 경로를 계산합니다.
+2. PostGIS로 경로 주변 주유소를 조회합니다.
+3. `경로 이탈거리 기반 이동비 + 예상 주유비`로 계산한 `estimatedTotalCostWon`이 낮은 주유소 top 5를 고릅니다.
+4. top 5에 대해서만 네이버 Directions 경유지 API를 호출해 현위치-주유소-목적지 경로를 계산합니다.
+5. `경유 경로 거리 - 기본 경로 거리`를 `routeExtraDistanceMeters`로 기록하고, `추가 이동비 + 예상 주유비`로 다시 계산한 `estimatedTotalCostWon`이 낮은 순서로 `stations[]`를 반환합니다.
+
+### 경로만 요청 예시
 
 ```json
 {
@@ -147,110 +95,57 @@ Content-Type: application/json
   "originLongitude": 127.0276,
   "destinationLatitude": 37.5100,
   "destinationLongitude": 127.0620,
-  "routePolyline": null,
-  "radiusKm": 5,
-  "fuelAmountLiters": 45.0,
-  "fuelEfficiencyKmPerLiter": 12.3,
-  "fuelTypes": [
-    "REGULAR_GASOLINE",
-    "PREMIUM_GASOLINE",
-    "DIESEL"
-  ],
-  "sortOrder": "CHEAPEST_FUEL_ASC",
+  "routeResultMode": "ROUTE_ONLY",
   "originLabel": "현재위치",
-  "destinationLabel": "선택한 주유소"
+  "destinationLabel": "목적지"
 }
 ```
 
-### 3-4. cURL 예시
+### 경로와 주변 주유소 요청 예시
+
+```json
+{
+  "originLatitude": 37.4979,
+  "originLongitude": 127.0276,
+  "destinationLatitude": 37.5100,
+  "destinationLongitude": 127.0620,
+  "radiusKm": 5,
+  "fuelAmountLiters": 45.0,
+  "fuelEfficiencyKmPerLiter": 12.3,
+  "fuelTypes": ["REGULAR_GASOLINE", "PREMIUM_GASOLINE", "DIESEL"],
+  "sortOrder": "CHEAPEST_FUEL_ASC",
+  "routeResultMode": "ROUTE_WITH_STATIONS",
+  "originLabel": "현재위치",
+  "destinationLabel": "목적지"
+}
+```
+
+### cURL
 
 ```bash
-curl.exe -X POST "http://localhost:8080/api/stations/route" `
-  -H "Content-Type: application/json" `
-  --data-raw '{
+curl -X POST "http://localhost:8080/api/stations/route" \
+  -H "Content-Type: application/json" \
+  -d '{
     "originLatitude": 37.4979,
     "originLongitude": 127.0276,
     "destinationLatitude": 37.5100,
     "destinationLongitude": 127.0620,
-    "routePolyline": null,
-    "radiusKm": 5,
-    "fuelAmountLiters": 45.0,
-    "fuelEfficiencyKmPerLiter": 12.3,
-    "fuelTypes": ["REGULAR_GASOLINE", "PREMIUM_GASOLINE", "DIESEL"],
-    "sortOrder": "CHEAPEST_FUEL_ASC",
+    "routeResultMode": "ROUTE_ONLY",
     "originLabel": "현재위치",
-    "destinationLabel": "선택한 주유소"
+    "destinationLabel": "목적지"
   }'
 ```
 
-### 3-5. 응답 개요
-
-경로 요청 응답은 주변 주유소 목록과 함께, 경로 요약을 담은 `route` 객체를 함께 돌려줄 수 있습니다.
-
-- `searchMode`: `ROUTE`
-- `coordinateSystem`: `WGS84`
-- `radiusKm`: 검색 반경 km
-- `resultCount`: 주유소 개수
-- `referenceLabel`: 경로 기준 이름
-- `stations[]`: 경로 주변 주유소 목록
-- `route`: 네이버 길찾기 응답 요약
-
-### 3-6. 경로 객체 예시
-
-```json
-{
-  "routePolyline": "37.4979,127.0276;37.5041,127.0412;37.5100,127.0620",
-  "distanceMeters": 4820,
-  "durationSeconds": 612,
-  "tollFeeWon": 0,
-  "fuelPriceWon": 1240,
-  "routeOption": "traoptimal",
-  "currentDateTime": "2026-06-08T10:30:00"
-}
-```
-
-### 3-7. 응답 전체 예시
+### 응답 예시
 
 ```json
 {
   "searchMode": "ROUTE",
   "coordinateSystem": "WGS84",
   "radiusKm": 5.0,
-  "resultCount": 2,
-  "referenceLabel": "현재위치 -> 선택한 주유소",
-  "stations": [
-    {
-      "stationId": "A0012345",
-      "stationName": "예시주유소 1",
-      "brandName": "SK",
-      "address": "서울특별시 강남구 ...",
-      "phone": "02-123-4567",
-      "latitude": 37.5012,
-      "longitude": 127.0311,
-      "coordinateSystem": "WGS84",
-      "distanceMeters": 320,
-      "distanceBasis": "ROUTE_LINE",
-      "fuelPrices": {
-        "regularGasolineWon": 1678,
-        "premiumGasolineWon": 1789,
-        "dieselWon": 1544,
-        "lpgWon": null,
-        "updatedAt": "2026-06-08T10:00:00"
-      },
-      "cheapestFuelType": "DIESEL",
-      "cheapestFuelPriceWon": 1544,
-      "estimatedTravelFuelCostWon": 16960,
-      "estimatedTotalCostWon": 18480,
-      "routeExtraDistanceMeters": 120,
-      "notes": [
-        "좌표계: WGS84",
-        "거리 기준: ROUTE_LINE",
-        "유가 최신 시각: 2026-06-08T10:00:00",
-        "전화번호 등록됨"
-      ],
-      "updatedAt": "2026-06-08T10:00:00"
-    }
-  ],
+  "resultCount": 0,
+  "referenceLabel": "현재위치 -> 목적지",
+  "stations": [],
   "route": {
     "routePolyline": "37.4979,127.0276;37.5041,127.0412;37.5100,127.0620",
     "distanceMeters": 4820,
@@ -263,118 +158,67 @@ curl.exe -X POST "http://localhost:8080/api/stations/route" `
 }
 ```
 
-### 3-8. 프론트에서 주의할 점
+`route.routePolyline`은 Kakao Map `RouteLine` 렌더링에 사용합니다. 백엔드는 네이버 Directions 응답을 프론트가 바로 그릴 수 있는 WGS84 좌표열로 변환해 반환합니다.
 
-- `routePolyline`은 선택값입니다. 없어도 백엔드가 경로를 계산합니다.
-- 위도/경도 순서는 프론트에서 보낸 그대로 사용하면 됩니다.
-- 백엔드 내부에서만 네이버 규격인 `경도,위도` 순서로 바꿉니다.
-- `routePolyline`이 오면 프론트는 지도 polyline 렌더링에 바로 쓸 수 있습니다.
+`ROUTE_WITH_STATIONS` 응답의 각 `stations[]` 항목에는 추가로 다음 값이 들어갈 수 있습니다.
 
----
+- `distanceMeters`: 경로선에서 주유소까지의 최단 직선거리
+- `routeExtraDistanceMeters`: 주유소를 경유했을 때 추가되는 실제 이동거리. 경로 위 주유소는 0이 될 수 있습니다.
+- `estimatedTravelFuelCostWon`: 추가 이동거리에 대한 예상 이동 연료비
+- `estimatedTotalCostWon`: 예상 총비용. 경로 추천에서는 `추가 이동비 + 예상 주유비` 기준이며 이 값이 낮은 순서로 반환됩니다.
+- `detourRoute`: 현위치-주유소-목적지 경유 경로 정보
 
-## 4. 주유소 상세 조회
+`detourRoute.routePolyline`은 특정 추천 주유소를 선택했을 때 지도에 경유 경로선을 그리는 데 사용할 수 있습니다.
 
-### 요청
+## 3. 주유소 상세 조회
+
+주유소 코드로 상세 정보를 조회합니다.
 
 ```http
 GET /api/stations/{stationId}
 ```
 
-### 예시
+### 응답 주요 필드
 
-```text
-GET /api/stations/A0012345
+- `station.stationId`: 주유소 코드
+- `station.stationName`: 상호명
+- `station.address`: 도로명주소
+- `station.phone`: 전화번호
+- `station.latitude`, `station.longitude`: WGS84 좌표
+- `station.fuelPrices`: 유종별 가격
+- `station.updatedAt`: 최신 갱신 시각
+- `station.notes`: 보조 안내
+
+## 4. 목적지 자동완성
+
+입력 중인 검색어로 자동완성 후보를 조회합니다. 이 API는 외부 카카오 API를 직접 호출하지 않고 백엔드 DB 후보를 우선 사용합니다.
+
+```http
+GET /api/places/autocomplete?query=관악&limit=10
 ```
 
-### 응답 개요
+## 5. 목적지 검색
 
-- `coordinateSystem`: `WGS84`
-- `station`: 주유소 상세 정보
+사용자가 검색 버튼이나 키보드 검색키로 검색을 확정했을 때 호출합니다. 백엔드는 캐시를 먼저 확인하고, 캐시가 없을 때만 카카오 Local API를 호출합니다.
 
-`station` 객체에는 주유소 코드, 상호명, 도로명주소, 전화번호, 좌표, 유가 정보, 최신 갱신 시각, 특이사항(notes)이 들어갑니다.
+```http
+POST /api/places/search
+Content-Type: application/json
+```
 
-### `station` 필드에 포함되는 값
-
-- `stationId`: 주유소 코드
-- `stationName`: 상호명
-- `brandName`: 상표 코드
-- `address`: 도로명주소
-- `phone`: 전화번호
-- `latitude`, `longitude`: WGS84 좌표
-- `coordinateSystem`: 좌표계 문자열
-- `fuelPrices`: 현재 유가 정보
-- `updatedAt`: 최신 갱신 시각
-- `notes`: 특이사항 목록
-
-### 응답 예시
+### 예시
 
 ```json
 {
-  "coordinateSystem": "WGS84",
-  "station": {
-    "stationId": "A0012345",
-    "stationName": "샘플주유소",
-    "brandName": "HDX",
-    "address": "서울특별시 강남구 테헤란로 123",
-    "phone": "02-123-4567",
-    "latitude": 37.4979,
-    "longitude": 127.0276,
-    "coordinateSystem": "WGS84",
-    "fuelPrices": {
-      "gasLow": 1650,
-      "gasHign": 1760,
-      "disl": 1520,
-      "lpg": null,
-      "updatedAt": "2026-06-08T10:30:00"
-    },
-    "notes": [
-      "좌표계: WGS84",
-      "거리 기준: REFERENCE_POINT",
-      "유가 최신 시각: 2026-06-08T10:30:00",
-      "전화번호 등록됨"
-    ],
-    "updatedAt": "2026-06-08T10:30:00"
-  }
+  "query": "관악산",
+  "page": 1,
+  "size": 10
 }
 ```
 
-### 프론트에서 어떻게 쓰면 되는가
+응답의 `items[]`에서 `placeName`, `roadAddressName`, `addressName`, `latitude`, `longitude`를 우선 사용합니다.
 
-이 API는 주유소 목록이나 지도 마커를 눌렀을 때, 해당 주유소의 상세 패널을 채우는 용도로 쓰면 가장 편합니다.
-
-권장 흐름은 다음과 같습니다.
-
-1. 프론트에서 주유소 목록 또는 지도 마커를 선택합니다.
-2. 선택한 항목의 `stationId`를 꺼냅니다.
-3. `GET /api/stations/{stationId}` 를 호출합니다.
-4. 응답의 `station` 안에서 다음 값을 꺼내 상세 화면에 표시합니다.
-   - `stationId`: 주유소 코드
-   - `stationName`: 상호명
-   - `address`: 도로명주소
-   - `phone`: 전화번호
-   - `fuelPrices`: 현재 유가
-   - `notes`: 특이사항
-5. 필요하면 `latitude`, `longitude`로 마커 중심을 다시 맞춥니다.
-
-### 프론트에서 주의할 점
-
-- 이 API는 검색 API가 아니라 **단일 주유소 상세 조회 API**입니다.
-- `stationId`는 목록 조회 응답에 들어 있는 값을 그대로 쓰면 됩니다.
-- `notes`는 고정 필드가 아니라, 화면 설명을 돕기 위해 백엔드가 덧붙이는 보조 정보입니다.
-- `phone`이나 `fuelPrices`가 비어 있을 수 있으니, 프론트에서는 null-safe 처리로 보여주는 편이 좋습니다.
-- 상세 패널은 `stationName`, `address`, `phone`을 먼저 보여주고, `notes`는 아래쪽 보조 설명으로 붙이면 읽기 좋습니다.
-
-### 프론트 화면 예시
-
-- 지도 마커 탭
-- 주유소 리스트 항목 탭
-- 경로 추천 결과에서 특정 주유소 선택
-
-이 세 곳 모두 같은 `GET /api/stations/{stationId}`를 써서 통일할 수 있습니다.
-
----
-
-## 5. Retrofit 인터페이스 예시
+## 6. Retrofit 예시
 
 ```kotlin
 interface StationApiService {
@@ -398,48 +242,11 @@ interface StationApiService {
 }
 ```
 
----
+## 7. 주의사항
 
-## 6. 프론트에서 자주 쓰는 유종과 정렬 값
+- 프론트는 `routeResultMode`를 목적에 맞게 명시하는 것을 권장합니다.
+- `ROUTE_ONLY` 응답에서는 `stations[]`가 빈 배열일 수 있으므로 null-safe가 아니라 empty-safe로 처리합니다.
+- `route`가 없거나 `routePolyline`이 비어 있으면 프론트는 기존 직선 fallback을 사용할 수 있습니다.
+- HTTP가 막히는 환경에서는 Cloudflare Tunnel 같은 HTTPS 주소를 `secrets/backend_base_url.txt`에 반영합니다.
 
-### 유종
 
-- `REGULAR_GASOLINE`
-- `PREMIUM_GASOLINE`
-- `DIESEL`
-- `LPG`
-
-### 정렬
-
-- `DISTANCE_ASC`
-- `CHEAPEST_FUEL_ASC`
-- `ESTIMATED_TOTAL_COST_ASC`
-
----
-
-## 7. 에러 처리
-
-- HTTP 2xx가 아니면 백엔드에서 에러 응답을 반환합니다.
-- 네트워크 실패, DNS 실패, 타임아웃은 프론트에서 별도 예외로 처리합니다.
-- route API 호출 실패 시에도 주변 주유소 목록만 먼저 보여주는 방식으로 UX를 유지할 수 있습니다.
-
----
-
-## 8. 로컬 개발 메모
-
-- 에뮬레이터는 `http://10.0.2.2:8080/`을 기본으로 사용합니다.
-- 실기기에서는 같은 Wi-Fi의 PC IP 또는 터널 주소를 사용합니다.
-- 백엔드 주소를 자주 바꿔야 하면 `secrets/backend_base_url.txt`를 갱신하고 앱 설정에서 읽어오도록 합니다.
-
----
-
-## 9. 요약
-
-프론트엔드가 현재 위치와 목적지를 보내면, 백엔드가 네이버 길찾기 API를 대신 호출해서 경로를 받아오고, 그 경로를 기준으로 주유소 목록과 경로 요약을 함께 돌려줍니다.
-
-즉,
-
-- 프론트엔드: 좌표를 보낸다
-- 백엔드: 네이버 길찾기를 호출한다
-- 백엔드: 경로와 주유소 목록을 돌려준다
-- 프론트엔드: 지도에 polyline과 마커를 그린다

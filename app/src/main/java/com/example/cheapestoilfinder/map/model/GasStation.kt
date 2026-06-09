@@ -2,6 +2,7 @@ package com.example.cheapestoilfinder.map.model
 
 import com.example.cheapestoilfinder.station.dto.FuelPriceSummary
 import com.example.cheapestoilfinder.map.model.StationCostSummary
+import com.example.cheapestoilfinder.station.dto.RouteSummaryResponse
 
 data class GasStation(
     val id: String,
@@ -13,5 +14,7 @@ data class GasStation(
     val locationPoint: LocationPoint,
     val fuelPrices: FuelPriceSummary? = null,
     val phone: String = "",
-    val costSummary: StationCostSummary? = null
+    val costSummary: StationCostSummary? = null,
+    val routeExtraDistanceMeters: Int? = null,
+    val detourRoute: RouteSummaryResponse? = null
 )

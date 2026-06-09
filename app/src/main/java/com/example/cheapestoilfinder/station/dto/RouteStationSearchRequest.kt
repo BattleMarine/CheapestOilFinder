@@ -14,6 +14,7 @@ data class RouteStationSearchRequest(
     var fuelEfficiencyKmPerLiter: Double = 10.0,
     var fuelTypes: List<FuelType> = defaultFuelTypes(),
     var sortOrder: StationSearchSortOrder = StationSearchSortOrder.DISTANCE_ASC,
+    var routeResultMode: RouteResultMode = RouteResultMode.ROUTE_ONLY,
     var originLabel: String? = null,
     var destinationLabel: String? = null
 ) {
@@ -27,6 +28,7 @@ data class RouteStationSearchRequest(
         fuelAmountLiters: Double,
         fuelEfficiencyKmPerLiter: Double,
         fuelTypes: List<FuelType>?,
+        routeResultMode: RouteResultMode,
         originLabel: String?,
         destinationLabel: String?
     ) : this(
@@ -40,6 +42,7 @@ data class RouteStationSearchRequest(
         fuelEfficiencyKmPerLiter,
         fuelTypes ?: defaultFuelTypes(),
         StationSearchSortOrder.DISTANCE_ASC,
+        routeResultMode,
         originLabel,
         destinationLabel
     )
@@ -51,4 +54,9 @@ data class RouteStationSearchRequest(
             FuelType.DIESEL
         )
     }
+}
+
+enum class RouteResultMode {
+    ROUTE_ONLY,
+    ROUTE_WITH_STATIONS
 }

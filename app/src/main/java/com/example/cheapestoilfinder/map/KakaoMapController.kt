@@ -71,6 +71,8 @@ class KakaoMapController(
     private var currentLocationRadiusPolyline: Polyline? = null
     private var routeLayer: ShapeLayer? = null
     private var routePolyline: Polyline? = null
+    private var detourRouteLayer: ShapeLayer? = null
+    private var detourRoutePolyline: Polyline? = null
     private var stationLabelLayer: LabelLayer? = null
     private var stationPriceLabelLayer: LabelLayer? = null
     private var destinationSearchLabelLayer: LabelLayer? = null
@@ -82,6 +84,7 @@ class KakaoMapController(
     private var destinationSearchSelectedLabelStyles: LabelStyles? = null
     private var destinationSearchCommittedLabelStyles: LabelStyles? = null
     private var routeDistanceLabel: Label? = null
+    private var detourRouteDistanceLabel: Label? = null
     private val stationLabelStylesByResId = mutableMapOf<Int, LabelStyles>()
     private val stationPriceStylesByKey = mutableMapOf<String, LabelStyles>()
     private val stationLabelsById = mutableMapOf<String, Label>()
@@ -105,6 +108,7 @@ class KakaoMapController(
     private var currentPriceDisplayMode: StationPriceDisplayMode = StationPriceDisplayMode.FULL
     private var currentPriceOpacity: Float = 1f
     private var currentPriceScale: Float = 1f
+    private var routeRecommendationStationMode: Boolean = false
     private var stationSelectedListener: ((GasStation) -> Unit)? = null
     private var destinationSearchResultSelectedListener: ((DestinationSearchSuggestion) -> Unit)? = null
     private var selectedDestinationSearchResultKey: String? = null
@@ -153,11 +157,14 @@ class KakaoMapController(
                     currentLocationRadiusPolyline = null
                     routeLayer = null
                     routePolyline = null
+                    detourRouteLayer = null
+                    detourRoutePolyline = null
                     stationLabelLayer = null
                     stationPriceLabelLayer = null
                     destinationSearchLabelLayer = null
                     routeDistanceLabelLayer = null
                     routeDistanceLabel = null
+                    detourRouteDistanceLabel = null
                     currentLocationLabelLayer = null
                     stationLabelStylesByResId.clear()
                     stationPriceStylesByKey.clear()
@@ -316,6 +323,7 @@ class KakaoMapController(
     }
 
     override fun showStations(stations: List<GasStation>) {
+        routeRecommendationStationMode = false
         renderedStations.clear()
         renderedStations.addAll(stations)
         Log.d(TAG, "showStations requested. size=${renderedStations.size}")
@@ -387,6 +395,7 @@ class KakaoMapController(
     fun clearRoute() {
         renderedRoute = null
         clearRenderedRoute()
+        clearDetourRoute()
     }
 
     override fun showRoute(routeInfo: RouteInfo, placement: RouteCameraPlacement) {
@@ -395,6 +404,28 @@ class KakaoMapController(
         renderRoute(routeInfo)
         fitRoute(routeInfo, placement)
         renderRouteDistanceLabel(routeInfo, parseRoutePolyline(routeInfo.polyline))
+    }
+
+    override fun showRouteRecommendedStations(stations: List<GasStation>) {
+        routeRecommendationStationMode = true
+        renderedStations.clear()
+        renderedStations.addAll(stations)
+        clearRenderedStationPrices()
+        Log.d(TAG, "showRouteRecommendedStations requested. size=${renderedStations.size}")
+        renderStationIconsOnly(renderedStations)
+    }
+
+    override fun showDetourRoute(routeInfo: RouteInfo, extraDistanceMeters: Int?) {
+        Log.d(TAG, "showDetourRoute requested. distance=${routeInfo.distanceMeters}, extra=$extraDistanceMeters")
+        renderDetourRoute(routeInfo)
+        renderDetourDistanceLabel(extraDistanceMeters, parseRoutePolyline(routeInfo.polyline))
+    }
+
+    override fun clearDetourRoute() {
+        detourRoutePolyline?.remove()
+        detourRoutePolyline = null
+        detourRouteDistanceLabel?.remove()
+        detourRouteDistanceLabel = null
     }
 
     override fun setOnStationSelectedListener(listener: ((GasStation) -> Unit)?) {
@@ -410,9 +441,11 @@ class KakaoMapController(
         clearRenderedStationPrices()
         clearRenderedDestinationSearchResults()
         clearRenderedRoute()
+        clearDetourRoute()
         clearCurrentLocationLabel()
         clearCurrentLocationRadius()
         renderedStations.clear()
+        routeRecommendationStationMode = false
         renderedDestinationSearchResults.clear()
         renderedRoute = null
         selectedDestinationSearchResultKey = null
@@ -499,6 +532,13 @@ class KakaoMapController(
                     .setVisible(true)
             )
         }
+
+        if (detourRouteLayer == null) {
+            detourRouteLayer = shapeManager.addLayer(
+                ShapeLayerOptions.from("detour-route-line-layer", 8499, ShapeLayerPass.Overlay)
+                    .setVisible(true)
+            )
+        }
     }
 
     private fun registerCameraListeners(map: KakaoMap) {
@@ -516,7 +556,9 @@ class KakaoMapController(
                     TAG,
                     "Camera move ended. zoom=${cameraPosition.zoomLevel}, alpha=$desiredOpacity, scale=$desiredScale, markerMode=$desiredMarkerMode, gesture=$gestureType"
                 )
-                if ((desiredOpacity != currentPriceOpacity ||
+                if (routeRecommendationStationMode && renderedStations.isNotEmpty()) {
+                    renderStationIconsOnly(renderedStations)
+                } else if ((desiredOpacity != currentPriceOpacity ||
                         desiredScale != currentPriceScale ||
                         desiredMarkerMode != currentStationMarkerDisplayMode) &&
                     renderedStations.isNotEmpty()
@@ -694,6 +736,36 @@ class KakaoMapController(
             desiredScale = desiredScale
         )
         Log.d(TAG, "renderStations finished. iconLabels=${stationLabelsById.size}, priceLabels=${stationPriceLabelsById.size}")
+    }
+
+    private fun renderStationIconsOnly(stations: List<GasStation>) {
+        ensureLabelLayers()
+        val layer = stationLabelLayer ?: return
+        val orderedStations = orderStationsByScreenPosition(stations)
+        val visibleStationIds = orderedStations.mapTo(hashSetOf()) { it.id }
+        removeStaleStationLabels(visibleStationIds)
+        clearRenderedStationPrices()
+        orderedStations.forEachIndexed { index, station ->
+            val point = station.locationPoint
+            val stationLogoStyles = getStationLogoStyles(station.brand) ?: return@forEachIndexed
+            val stationRank = 2000L + index
+            val label = stationLabelsById[station.id] ?: layer.addLabel(
+                LabelOptions.from(LatLng.from(point.latitude, point.longitude))
+                    .setRank(stationRank)
+                    .setStyles(stationLogoStyles)
+                    .setTag(station)
+                    .setVisible(true)
+            ).also {
+                stationLabelsById[station.id] = it
+                it.setClickable(true)
+            }
+            label.setTag(station)
+            label.setRank(stationRank)
+            label.moveTo(LatLng.from(point.latitude, point.longitude))
+            label.changeStyles(stationLogoStyles)
+            label.show()
+        }
+        Log.d(TAG, "renderStationIconsOnly finished. iconLabels=${stationLabelsById.size}")
     }
 
     private fun renderStationPriceLabelsForZoom(
@@ -1034,6 +1106,30 @@ class KakaoMapController(
         Log.d(TAG, "renderRoute finished. polyline=${routePolyline != null}")
     }
 
+    private fun renderDetourRoute(routeInfo: RouteInfo) {
+        clearDetourRoute()
+        if (detourRouteLayer == null) {
+            ensureLabelLayers()
+        }
+        val layer = detourRouteLayer ?: return
+        val points = parseRoutePolyline(routeInfo.polyline)
+        if (points.size < 2) {
+            Log.w(TAG, "Skipping detour route render because polyline has insufficient points.")
+            return
+        }
+
+        val polyline = layer.addPolyline(
+            PolylineOptions.from(
+                MapPoints.fromLatLng(points),
+                11.5f,
+                Color.parseColor("#FACC15")
+            )
+        )
+        polyline.show()
+        detourRoutePolyline = polyline
+        layer.setVisible(true)
+    }
+
     private fun renderRouteDistanceLabel(route: RouteInfo, points: List<LatLng>) {
         val map = kakaoMap ?: return
         ensureLabelLayers()
@@ -1070,6 +1166,46 @@ class KakaoMapController(
                 .setVisible(true)
         )
         routeDistanceLabel?.show()
+        layer.setVisible(true)
+    }
+
+    private fun renderDetourDistanceLabel(extraDistanceMeters: Int?, points: List<LatLng>) {
+        val map = kakaoMap ?: return
+        ensureLabelLayers()
+        val layer = routeDistanceLabelLayer ?: return
+        val labelManager = map.labelManager ?: return
+        val distanceMeters = extraDistanceMeters?.takeIf { it > 0 } ?: return
+        if (points.isEmpty()) {
+            return
+        }
+
+        detourRouteDistanceLabel?.remove()
+        detourRouteDistanceLabel = null
+
+        val midpoint = points[points.size / 2]
+        val screenPoint = map.toScreenPoint(midpoint)
+        val containerWidth = mapContainer?.width ?: 0
+        val density = activity?.resources?.displayMetrics?.density ?: 1f
+        val estimatedLabelWidthPx = 104f * density
+        val showOnRight = containerWidth <= 0 ||
+            screenPoint == null ||
+            screenPoint.x + estimatedLabelWidthPx < containerWidth
+        val anchorX = if (showOnRight) 0f else 1f
+        val bitmap = buildRouteDistanceBitmap(formatExtraDistance(distanceMeters), Color.parseColor("#FACC15"))
+        val styles = labelManager.addLabelStyles(
+            LabelStyles.from(
+                LabelStyle.from(bitmap)
+                    .setAnchorPoint(anchorX, 0.5f)
+            )
+        ) ?: return
+
+        detourRouteDistanceLabel = layer.addLabel(
+            LabelOptions.from(midpoint)
+                .setRank(Long.MAX_VALUE - 1)
+                .setStyles(styles)
+                .setVisible(true)
+        )
+        detourRouteDistanceLabel?.show()
         layer.setVisible(true)
     }
 
@@ -1488,7 +1624,10 @@ class KakaoMapController(
         return bitmap
     }
 
-    private fun buildRouteDistanceBitmap(text: String): Bitmap {
+    private fun buildRouteDistanceBitmap(
+        text: String,
+        borderColor: Int = Color.parseColor("#F97316")
+    ): Bitmap {
         val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#1F1A17")
             textSize = 24f
@@ -1508,7 +1647,7 @@ class KakaoMapController(
             style = Paint.Style.FILL
         }
         val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#F97316")
+            color = borderColor
             style = Paint.Style.STROKE
             strokeWidth = 3f
         }
@@ -1527,6 +1666,14 @@ class KakaoMapController(
             String.format(Locale.KOREA, "%.2fkm", distanceMeters / 1000.0)
         }
         return "총 $distanceText"
+    }
+
+    private fun formatExtraDistance(distanceMeters: Int): String {
+        return if (distanceMeters < 1000) {
+            "+${distanceMeters}m"
+        } else {
+            String.format(Locale.KOREA, "+%.2fkm", distanceMeters / 1000.0)
+        }
     }
 
     private fun orderDestinationSearchResultsByScreenPosition(

@@ -99,6 +99,7 @@ class CurrentLocationActivity : Activity() {
     private var temporaryStationListFuelType: UserFuelType? = null
     private var selectedSearchRadiusMeters: Int = DEFAULT_SEARCH_RADIUS_METERS
     private var lastMinimizedBackPressedAt = 0L
+    private var stationRouteRequestGeneration = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -255,6 +256,7 @@ class CurrentLocationActivity : Activity() {
     }
 
     private fun loadStationsAround(point: LocationPoint) {
+        clearSelectedStationRouteForRefresh("nearby station reload")
         Log.i(
             TAG,
             "Requesting nearby stations around: latitude=${point.latitude}, longitude=${point.longitude}, radiusMeters=$selectedSearchRadiusMeters"
@@ -853,6 +855,7 @@ class CurrentLocationActivity : Activity() {
             return
         }
 
+        val routeRequestGeneration = ++stationRouteRequestGeneration
         val destination = station.locationPoint
         val request = RouteStationSearchRequest(
             originLatitude = origin.latitude,
@@ -870,6 +873,11 @@ class CurrentLocationActivity : Activity() {
 
         stationRepository?.searchRouteStations(request, object : ApiCallback<StationSearchResponse> {
             override fun onSuccess(result: StationSearchResponse) {
+                if (routeRequestGeneration != stationRouteRequestGeneration || selectedStation?.id != station.id) {
+                    Log.i(TAG, "Ignoring stale route response for station ${station.id}")
+                    return
+                }
+
                 val route = result.route
                 val routePolyline = route?.routePolyline?.takeIf { it.isNotBlank() }
                     ?: buildFallbackRoutePolyline(origin, destination)
@@ -1182,6 +1190,7 @@ class CurrentLocationActivity : Activity() {
         if (rawNearbyStations.isEmpty()) {
             return
         }
+        clearSelectedStationRouteForRefresh("temporary fuel type changed")
         val visibleStations = prepareStationsForCurrentFuelType(rawNearbyStations)
         loadedStations = visibleStations
         stationListAdapter.submitList(sortStationsForDisplay(visibleStations))
@@ -1196,6 +1205,12 @@ class CurrentLocationActivity : Activity() {
             }
         }
         mapController?.showStations(visibleStations)
+    }
+
+    private fun clearSelectedStationRouteForRefresh(reason: String) {
+        stationRouteRequestGeneration++
+        mapController?.clearRoute()
+        Log.i(TAG, "Cleared selected station route for station list refresh: $reason")
     }
 
     private fun syncStationListFuelTypeSpinner() {

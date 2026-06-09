@@ -32,7 +32,9 @@ object StationDisplayMapper {
             ),
             item.fuelPrices,
             item.phone.orEmpty(),
-            null
+            null,
+            item.routeExtraDistanceMeters,
+            item.detourRoute
         )
     }
 }

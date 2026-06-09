@@ -31,13 +31,19 @@ import com.example.cheapestoilfinder.location.DeviceLocationResolver
 import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
 import com.example.cheapestoilfinder.map.RouteCameraPlacement
+import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
+import com.example.cheapestoilfinder.map.model.StationCostSummary
 import com.example.cheapestoilfinder.station.api.ApiCallback
+import com.example.cheapestoilfinder.station.api.StationSearchSortOrder
+import com.example.cheapestoilfinder.settings.CostCalculator
 import com.example.cheapestoilfinder.settings.UserFuelType
 import com.example.cheapestoilfinder.settings.UserPreferenceManager
 import com.example.cheapestoilfinder.station.BackendStationRepository
+import com.example.cheapestoilfinder.station.StationDisplayMapper
 import com.example.cheapestoilfinder.station.StationRepository
+import com.example.cheapestoilfinder.station.dto.RouteResultMode
 import com.example.cheapestoilfinder.station.dto.RouteStationSearchRequest
 import com.example.cheapestoilfinder.station.dto.StationSearchResponse
 import kotlin.math.abs
@@ -65,6 +71,14 @@ class DestinationActivity : Activity() {
     private lateinit var destinationSearchResultsAdapter: DestinationAutocompleteAdapter
     private lateinit var destinationSearchResultsHandleTouchArea: View
     private lateinit var destinationSearchResultsHandle: View
+    private lateinit var routeRecommendationContainer: View
+    private lateinit var routeRecommendationSheet: View
+    private lateinit var routeRecommendationRecycler: RecyclerView
+    private lateinit var routeRecommendationEmptyView: TextView
+    private lateinit var routeRecommendationCountView: TextView
+    private lateinit var routeRecommendationAdapter: StationListAdapter
+    private lateinit var routeRecommendationHandleTouchArea: View
+    private lateinit var routeRecommendationHandle: View
     private val destinationAutocompleteRepository: DestinationAutocompleteRepository by lazy {
         BackendDestinationAutocompleteRepository.createDefault(this)
     }
@@ -92,6 +106,13 @@ class DestinationActivity : Activity() {
     private var selectedDestinationPoint: LocationPoint? = null
     private var isDestinationConfirmed: Boolean = false
     private var destinationResultsStateBeforeConfirm = DestinationResultsSheetState.HIDDEN
+    private var confirmedBaseRouteInfo: RouteInfo? = null
+    private var routeRecommendationSheetCollapsedTranslationY: Float = 0f
+    private var routeRecommendationSheetMinimizedTranslationY: Float = 0f
+    private var routeRecommendationSheetDragging: Boolean = false
+    private var routeRecommendationSheetDragStartY: Float = 0f
+    private var routeRecommendationSheetDragStartTranslationY: Float = 0f
+    private var routeRecommendationSheetState = DestinationResultsSheetState.HIDDEN
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -135,6 +156,23 @@ class DestinationActivity : Activity() {
         }
         destinationSearchResultsHandleTouchArea = findViewById(R.id.destination_search_results_drag_handle_touch_area)
         destinationSearchResultsHandle = findViewById(R.id.destination_search_results_drag_handle)
+        routeRecommendationContainer = findViewById(R.id.route_recommendation_container)
+        routeRecommendationSheet = findViewById(R.id.route_recommendation_sheet)
+        routeRecommendationRecycler = findViewById(R.id.recycler_route_recommendations)
+        routeRecommendationEmptyView = findViewById(R.id.route_recommendation_empty)
+        routeRecommendationCountView = findViewById(R.id.route_recommendation_count)
+        routeRecommendationHandleTouchArea = findViewById(R.id.route_recommendation_drag_handle_touch_area)
+        routeRecommendationHandle = findViewById(R.id.route_recommendation_drag_handle)
+        routeRecommendationAdapter = StationListAdapter { station ->
+            if (routeRecommendationSheetState == DestinationResultsSheetState.EXPANDED) {
+                collapseRouteRecommendationPanel(animated = true)
+            }
+            showDetourRouteForStation(station)
+        }
+        routeRecommendationRecycler.layoutManager = LinearLayoutManager(this)
+        routeRecommendationRecycler.adapter = routeRecommendationAdapter
+        routeRecommendationContainer.visibility = View.GONE
+        configureRouteRecommendationPanel()
         destinationSearchResultsAdapter = DestinationAutocompleteAdapter { suggestion ->
             selectDestinationSearchResult(suggestion, moveCamera = true)
             if (destinationSearchResultsSheetState == DestinationResultsSheetState.EXPANDED) {
@@ -183,6 +221,9 @@ class DestinationActivity : Activity() {
             it.setOnDestinationSearchResultSelectedListener { suggestion ->
                 selectDestinationSearchResult(suggestion, moveCamera = false)
             }
+            it.setOnStationSelectedListener { station ->
+                showDetourRouteForStation(station)
+            }
             it.start()
         }
 
@@ -210,6 +251,9 @@ class DestinationActivity : Activity() {
             return
         }
         if (isDestinationConfirmed) {
+            if (handleRouteRecommendationBack()) {
+                return
+            }
             restoreDestinationBeforeConfirmState()
             return
         }
@@ -417,6 +461,34 @@ class DestinationActivity : Activity() {
         }
     }
 
+    private fun configureRouteRecommendationPanel() {
+        routeRecommendationContainer.visibility = View.GONE
+        routeRecommendationContainer.isClickable = false
+        routeRecommendationSheet.isClickable = false
+
+        routeRecommendationHandleTouchArea.setOnTouchListener { _, event ->
+            handleRouteRecommendationSheetTouch(event)
+        }
+        routeRecommendationHandle.setOnTouchListener { _, event ->
+            handleRouteRecommendationSheetTouch(event)
+        }
+        routeRecommendationHandleTouchArea.setOnClickListener {
+            toggleRouteRecommendationPanelByTap()
+        }
+        routeRecommendationHandle.setOnClickListener {
+            toggleRouteRecommendationPanelByTap()
+        }
+    }
+
+    private fun toggleRouteRecommendationPanelByTap() {
+        when (routeRecommendationSheetState) {
+            DestinationResultsSheetState.MINIMIZED -> collapseRouteRecommendationPanel(animated = true)
+            DestinationResultsSheetState.COLLAPSED -> expandRouteRecommendationPanel()
+            DestinationResultsSheetState.EXPANDED -> collapseRouteRecommendationPanel(animated = true)
+            DestinationResultsSheetState.HIDDEN -> Unit
+        }
+    }
+
     private fun measureDestinationSearchResultsPanel() {
         val targetHeight = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
@@ -432,6 +504,14 @@ class DestinationActivity : Activity() {
         destinationSearchResultsSheet.layoutParams =
             destinationSearchResultsSheet.layoutParams.apply { height = targetHeight }
         destinationSearchResultsSheet.requestLayout()
+        routeRecommendationSheet.layoutParams =
+            routeRecommendationSheet.layoutParams.apply { height = targetHeight }
+        routeRecommendationSheet.requestLayout()
+        routeRecommendationSheetCollapsedTranslationY = destinationSearchResultsCollapsedTranslationY
+        routeRecommendationSheetMinimizedTranslationY = destinationSearchResultsMinimizedTranslationY
+        if (routeRecommendationContainer.visibility != View.VISIBLE) {
+            routeRecommendationSheet.translationY = targetHeight.toFloat()
+        }
         if (destinationSearchResultsSheetState == DestinationResultsSheetState.HIDDEN) {
             destinationSearchResultsSheet.translationY = targetHeight.toFloat()
         }
@@ -629,7 +709,13 @@ class DestinationActivity : Activity() {
             radiusKm = 5.0,
             fuelAmountLiters = settings.refuelAmountLiter,
             fuelEfficiencyKmPerLiter = settings.fuelEfficiencyKmPerLiter,
-            fuelTypes = UserFuelType.values().map { it.backendFuelType },
+            fuelTypes = listOf(
+                UserFuelType.GAS_HIGH.backendFuelType,
+                UserFuelType.GAS_LOW.backendFuelType,
+                UserFuelType.DIESEL.backendFuelType
+            ),
+            sortOrder = StationSearchSortOrder.ESTIMATED_TOTAL_COST_ASC,
+            routeResultMode = RouteResultMode.ROUTE_WITH_STATIONS,
             originLabel = origin.name.ifBlank { "현재 위치" },
             destinationLabel = suggestion.displayText
         )
@@ -648,10 +734,14 @@ class DestinationActivity : Activity() {
                     tollFeeWon = route?.tollFeeWon ?: 0,
                     polyline = routePolyline
                 )
-                enterDestinationConfirmedMode(suggestion, routeInfo)
+                val recommendedStations = prepareRouteRecommendationStations(
+                    StationDisplayMapper.toGasStations(result),
+                    routeInfo
+                ).take(5)
+                enterDestinationConfirmedMode(suggestion, routeInfo, recommendedStations)
                 Log.i(
                     TAG,
-                    "Destination route loaded: destination=${suggestion.displayText}, distance=${route?.distanceMeters}, duration=${route?.durationSeconds}"
+                    "Destination route loaded: destination=${suggestion.displayText}, distance=${route?.distanceMeters}, duration=${route?.durationSeconds}, recommendations=${recommendedStations.size}"
                 )
             }
 
@@ -665,10 +755,12 @@ class DestinationActivity : Activity() {
 
     private fun enterDestinationConfirmedMode(
         suggestion: DestinationSearchSuggestion,
-        routeInfo: RouteInfo
+        routeInfo: RouteInfo,
+        recommendedStations: List<GasStation>
     ) {
         destinationResultsStateBeforeConfirm = destinationSearchResultsSheetState
         isDestinationConfirmed = true
+        confirmedBaseRouteInfo = routeInfo
         destinationSearchResultsSheet.animate().cancel()
         destinationSearchResultsContainer.visibility = View.GONE
         destinationSearchResultsSheetState = DestinationResultsSheetState.HIDDEN
@@ -676,14 +768,20 @@ class DestinationActivity : Activity() {
         setDestinationButton.visibility = View.GONE
         mapController?.commitDestinationSearchResult(suggestion)
         mapController?.showRoute(routeInfo, RouteCameraPlacement.CENTER)
+        mapController?.showRouteRecommendedStations(recommendedStations)
+        showRouteRecommendationPanel(recommendedStations)
         updateDestinationFloatingControlsPosition()
     }
 
     private fun restoreDestinationBeforeConfirmState() {
         val selectedSuggestion = selectedDestinationSuggestion
         isDestinationConfirmed = false
+        confirmedBaseRouteInfo = null
         mapController?.clearRoute()
+        mapController?.clearDetourRoute()
+        mapController?.showRouteRecommendedStations(emptyList())
         mapController?.restoreDestinationSearchResults(cachedDestinationSearchResults, selectedSuggestion)
+        hideRouteRecommendationPanel()
 
         destinationSearchResultsContainer.visibility = View.VISIBLE
         destinationSearchResultsContainer.bringToFront()
@@ -702,6 +800,272 @@ class DestinationActivity : Activity() {
         restoreDestinationSearchResultsPanelState(destinationResultsStateBeforeConfirm)
         updateSetDestinationButtonPosition()
         updateDestinationFloatingControlsPosition()
+    }
+
+    private fun showRouteRecommendationPanel(stations: List<GasStation>) {
+        if (routeRecommendationSheetCollapsedTranslationY <= 0f) {
+            measureDestinationSearchResultsPanel()
+        }
+        routeRecommendationContainer.visibility = View.VISIBLE
+        routeRecommendationContainer.bringToFront()
+        routeRecommendationCountView.text = getString(
+            R.string.destination_search_results_count_format,
+            stations.size
+        )
+        routeRecommendationAdapter.submitList(stations)
+        routeRecommendationEmptyView.visibility = if (stations.isEmpty()) View.VISIBLE else View.GONE
+        routeRecommendationRecycler.visibility = if (stations.isEmpty()) View.GONE else View.VISIBLE
+        routeRecommendationSheet.animate().cancel()
+        collapseRouteRecommendationPanel(animated = false)
+    }
+
+    private fun hideRouteRecommendationPanel() {
+        routeRecommendationSheet.animate().cancel()
+        routeRecommendationContainer.visibility = View.GONE
+        routeRecommendationAdapter.submitList(emptyList())
+        routeRecommendationEmptyView.visibility = View.GONE
+        routeRecommendationRecycler.visibility = View.GONE
+        routeRecommendationSheet.translationY = destinationSearchResultsSheetHeightPx.toFloat()
+        routeRecommendationSheetState = DestinationResultsSheetState.HIDDEN
+    }
+
+    private fun expandRouteRecommendationPanel() {
+        if (routeRecommendationSheetState == DestinationResultsSheetState.HIDDEN) {
+            return
+        }
+
+        routeRecommendationContainer.visibility = View.VISIBLE
+        routeRecommendationContainer.bringToFront()
+        routeRecommendationSheet.animate().cancel()
+        routeRecommendationSheetState = DestinationResultsSheetState.EXPANDED
+        routeRecommendationSheet.animate()
+            .translationY(0f)
+            .setDuration(200L)
+            .start()
+    }
+
+    private fun collapseRouteRecommendationPanel(animated: Boolean) {
+        if (destinationSearchResultsSheetHeightPx <= 0) {
+            measureDestinationSearchResultsPanel()
+        }
+
+        routeRecommendationContainer.visibility = View.VISIBLE
+        routeRecommendationContainer.bringToFront()
+        routeRecommendationSheet.animate().cancel()
+        routeRecommendationSheetState = DestinationResultsSheetState.COLLAPSED
+        val target = routeRecommendationSheetCollapsedTranslationY
+        if (animated) {
+            routeRecommendationSheet.animate()
+                .translationY(target)
+                .setDuration(220L)
+                .start()
+        } else {
+            routeRecommendationSheet.translationY = target
+        }
+    }
+
+    private fun minimizeRouteRecommendationPanel(animated: Boolean) {
+        if (routeRecommendationSheetState == DestinationResultsSheetState.HIDDEN) {
+            return
+        }
+
+        routeRecommendationSheet.animate().cancel()
+        routeRecommendationSheetState = DestinationResultsSheetState.MINIMIZED
+        val target = routeRecommendationSheetMinimizedTranslationY
+        if (animated) {
+            routeRecommendationSheet.animate()
+                .translationY(target)
+                .setDuration(180L)
+                .start()
+        } else {
+            routeRecommendationSheet.translationY = target
+        }
+    }
+
+    private fun handleRouteRecommendationBack(): Boolean {
+        return when (routeRecommendationSheetState) {
+            DestinationResultsSheetState.EXPANDED -> {
+                collapseRouteRecommendationPanel(animated = true)
+                true
+            }
+            DestinationResultsSheetState.COLLAPSED -> {
+                minimizeRouteRecommendationPanel(animated = true)
+                true
+            }
+            DestinationResultsSheetState.MINIMIZED,
+            DestinationResultsSheetState.HIDDEN -> false
+        }
+    }
+
+    private fun handleRouteRecommendationSheetTouch(event: MotionEvent): Boolean {
+        if (routeRecommendationSheetState == DestinationResultsSheetState.HIDDEN) {
+            return false
+        }
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                routeRecommendationSheetDragging = true
+                routeRecommendationSheetDragStartY = event.rawY
+                routeRecommendationSheetDragStartTranslationY = routeRecommendationSheet.translationY
+                routeRecommendationSheet.animate().cancel()
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (!routeRecommendationSheetDragging) {
+                    return false
+                }
+
+                val delta = event.rawY - routeRecommendationSheetDragStartY
+                if (routeRecommendationSheetState == DestinationResultsSheetState.EXPANDED && delta < 0f) {
+                    return true
+                }
+
+                val (minTranslation, maxTranslation) = when (routeRecommendationSheetState) {
+                    DestinationResultsSheetState.EXPANDED -> 0f to routeRecommendationSheetCollapsedTranslationY
+                    DestinationResultsSheetState.COLLAPSED -> 0f to routeRecommendationSheetMinimizedTranslationY
+                    DestinationResultsSheetState.MINIMIZED -> routeRecommendationSheetCollapsedTranslationY to routeRecommendationSheetMinimizedTranslationY
+                    DestinationResultsSheetState.HIDDEN -> return false
+                }
+                routeRecommendationSheet.translationY =
+                    (routeRecommendationSheetDragStartTranslationY + delta)
+                        .coerceIn(minTranslation, maxTranslation)
+                return true
+            }
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL -> {
+                if (!routeRecommendationSheetDragging) {
+                    return false
+                }
+
+                routeRecommendationSheetDragging = false
+                val dragDelta = routeRecommendationSheet.translationY -
+                    routeRecommendationSheetDragStartTranslationY
+                if (abs(dragDelta) < 24f) {
+                    settleRouteRecommendationPanel()
+                    return true
+                }
+
+                if (dragDelta < 0f) {
+                    when (routeRecommendationSheetState) {
+                        DestinationResultsSheetState.MINIMIZED -> collapseRouteRecommendationPanel(animated = true)
+                        DestinationResultsSheetState.COLLAPSED -> expandRouteRecommendationPanel()
+                        DestinationResultsSheetState.EXPANDED -> expandRouteRecommendationPanel()
+                        DestinationResultsSheetState.HIDDEN -> Unit
+                    }
+                } else {
+                    when (routeRecommendationSheetState) {
+                        DestinationResultsSheetState.EXPANDED -> collapseRouteRecommendationPanel(animated = true)
+                        DestinationResultsSheetState.COLLAPSED -> minimizeRouteRecommendationPanel(animated = true)
+                        DestinationResultsSheetState.MINIMIZED -> minimizeRouteRecommendationPanel(animated = true)
+                        DestinationResultsSheetState.HIDDEN -> Unit
+                    }
+                }
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun settleRouteRecommendationPanel() {
+        when (routeRecommendationSheetState) {
+            DestinationResultsSheetState.EXPANDED -> expandRouteRecommendationPanel()
+            DestinationResultsSheetState.COLLAPSED -> collapseRouteRecommendationPanel(animated = true)
+            DestinationResultsSheetState.MINIMIZED -> minimizeRouteRecommendationPanel(animated = true)
+            DestinationResultsSheetState.HIDDEN -> Unit
+        }
+    }
+
+    private fun showDetourRouteForStation(station: GasStation) {
+        if (!isDestinationConfirmed) {
+            return
+        }
+        val baseRoute = confirmedBaseRouteInfo ?: return
+        val detour = station.detourRoute
+        val detourPolyline = detour?.routePolyline?.takeIf { it.isNotBlank() }
+        if (detourPolyline == null) {
+            Toast.makeText(this, "경유 경로 정보가 없습니다.", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "Selected route recommendation without detour polyline: ${station.id}")
+            return
+        }
+
+        val detourRouteInfo = RouteInfo(
+            origin = baseRoute.origin,
+            destination = baseRoute.destination,
+            distanceMeters = detour.distanceMeters,
+            durationSeconds = detour.durationSeconds,
+            tollFeeWon = detour.tollFeeWon,
+            polyline = detourPolyline
+        )
+        val extraDistanceMeters = station.routeExtraDistanceMeters
+            ?: (detour.distanceMeters - baseRoute.distanceMeters).takeIf { it > 0 }
+        mapController?.showDetourRoute(detourRouteInfo, extraDistanceMeters)
+        Log.d(TAG, "Detour route selected: station=${station.id}, extraDistance=$extraDistanceMeters")
+    }
+
+    private fun prepareRouteRecommendationStations(
+        stations: List<GasStation>,
+        baseRouteInfo: RouteInfo
+    ): List<GasStation> {
+        val settings = userPreferenceManager.loadSettings()
+        val selectedFuelType = settings.fuelType
+        return stations
+            .mapNotNull { station ->
+                val selectedFuelPrice = resolveSelectedFuelPrice(station, selectedFuelType)
+                if (selectedFuelPrice == null) {
+                    return@mapNotNull null
+                }
+                val detourDistanceMeters = station.routeExtraDistanceMeters
+                    ?: station.detourRoute?.distanceMeters
+                        ?.minus(baseRouteInfo.distanceMeters)
+                        ?.takeIf { it > 0 }
+                val effectiveDistanceMeters = detourDistanceMeters ?: station.distanceMeters.takeIf { it > 0 }
+                val moveCost = CostCalculator.calculateMoveCost(
+                    effectiveDistanceMeters,
+                    settings.fuelEfficiencyKmPerLiter,
+                    selectedFuelPrice
+                )
+                val refuelCost = CostCalculator.calculateRefuelCost(
+                    settings.refuelAmountLiter,
+                    selectedFuelPrice
+                )
+                val totalCost = CostCalculator.calculateTotalExpectedCost(moveCost, refuelCost)
+                station.copy(
+                    fuelType = selectedFuelType.backendFuelType.name,
+                    pricePerLiter = selectedFuelPrice,
+                    distanceMeters = effectiveDistanceMeters ?: station.distanceMeters,
+                    costSummary = StationCostSummary(
+                        selectedFuelType = selectedFuelType,
+                        selectedFuelPricePerLiter = selectedFuelPrice,
+                        distanceMeters = effectiveDistanceMeters,
+                        distanceKm = effectiveDistanceMeters?.div(1000.0),
+                        moveCostWon = moveCost,
+                        refuelCostWon = refuelCost,
+                        totalExpectedCostWon = totalCost,
+                        unavailableReason = if (totalCost == null) {
+                            getString(R.string.station_info_cost_unavailable)
+                        } else {
+                            null
+                        }
+                    )
+                )
+            }
+            .sortedWith(
+                compareBy<GasStation> { it.costSummary?.moveCostWon ?: Int.MAX_VALUE }
+                    .thenBy { it.routeExtraDistanceMeters ?: Int.MAX_VALUE }
+                    .thenBy { it.costSummary?.totalExpectedCostWon ?: Int.MAX_VALUE }
+                    .thenBy { it.name }
+            )
+    }
+
+    private fun resolveSelectedFuelPrice(station: GasStation, selectedFuelType: UserFuelType): Int? {
+        val prices = station.fuelPrices ?: return null
+        return when (selectedFuelType) {
+            UserFuelType.GAS_HIGH -> prices.premiumGasolineWon
+            UserFuelType.GAS_LOW -> prices.regularGasolineWon
+            UserFuelType.DIESEL -> prices.dieselWon
+            UserFuelType.LPG -> prices.lpgWon
+        }?.takeIf { it > 0 }
     }
 
     private fun restoreDestinationSearchResultsPanelState(

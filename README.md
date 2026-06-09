@@ -60,12 +60,16 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 - 손가락 핀치는 프리셋과 무관하게 자유롭게 확대·축소할 수 있습니다.
 - 설정 화면에서 저장한 유종·연비·1회 주유량은 SharedPreferences에 보관되고, 현재 위치 화면은 이 값을 읽어 비용 계산에 반영합니다.
 - 설정 화면과 주유소 리스트 드롭다운의 유종 선택지는 고급휘발유, 보통휘발유, 경유 3개만 노출합니다.
+- 유종 드롭다운이나 반경 드롭다운 변경처럼 주유소 목록을 새로 계산하거나 다시 조회하면, 이전에 선택한 주유소 경로선은 지도에서 지웁니다.
 
 - 목적지 화면은 현재 위치 화면과 동일하게 GPS를 자동 수신하지만, 상단 검색바를 눌러 전체화면 검색 오버레이를 열 수 있습니다.
 - 검색 오버레이는 입력창, 키보드 자동 포커스, 1초 디바운스 자동완성, 검색 확정 버튼을 제공합니다.
 - 검색 확정은 백엔드 `POST /api/places/search`를 호출하고, 결과는 검색 오버레이가 닫힌 뒤 별도 하단 결과 시트와 지도 마커에 반영합니다.
 - 검색 결과 시트는 현재 위치 주유소 리스트처럼 `최소화 / 절반 / 전체` 상태 전환을 따르며, 지도에는 기본 빨간 점 마커를 표시하고 선택된 장소만 빨간 `📍` 핀 마커로 표시합니다.
 - 목적지 검색 응답은 백엔드 `items[]`의 `placeName`, `roadAddressName`/`addressName`, `latitude`, `longitude`를 우선 사용합니다.
+- 목적지를 확정하면 `POST /api/stations/route`를 `ROUTE_WITH_STATIONS` 모드로 호출해 현위치-목적지 기본 경로와 경로 주변 추천 주유소 Top 5를 함께 받습니다.
+- 추천 주유소 Top 5는 지도 위 브랜드 마커와 하단 `낮은 경유 비용` 페이지에 표시합니다.
+- 추천 주유소를 누르면 기존 현위치-목적지 주황 경로 아래에 노란색 현위치-주유소-목적지 경유 경로를 그리고, 경유로 증가한 거리를 `+#km` 또는 `+#m` 라벨로 표시합니다.
 
 ## 주유소 리스트 명세
 
@@ -132,6 +136,10 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 - 목적지 경로를 표시할 때는 검색 결과 시트용 하단 패딩을 제거하고, 전체 지도 화면 중앙에 경로가 오도록 카메라를 맞춥니다.
 - 목적지를 확정하면 선택 목적지만 🚩 마커로 남기고 나머지 검색 결과 빨간 점은 지도에서 제거합니다.
 - 목적지 확정 후에는 `목적지로 설정` 버튼과 검색 결과 페이지를 숨깁니다.
+- 목적지 확정 후에는 백엔드가 함께 반환한 경로 주변 추천 주유소 Top 5를 브랜드 마커로 표시하고, 하단에 `낮은 경유 비용` 추천 페이지를 엽니다.
+- `낮은 경유 비용` 추천 페이지도 주유소 리스트처럼 `최소화 / 절반 / 전체` 3단계로 움직이며, 상단 손잡이 영역에서만 확장·축소 제스처를 받습니다.
+- 추천 주유소 리스트 항목 또는 지도 브랜드 마커를 누르면 해당 주유소의 `detourRoute.routePolyline`을 노란 경유 경로선으로 표시합니다.
+- 경유 경로선 옆에는 `routeExtraDistanceMeters` 또는 경유 경로 거리와 기본 경로 거리의 차이를 기준으로 추가 이동거리를 표시합니다.
 - 목적지 확정 상태에서 뒤로가기를 누르면 경로선과 🚩 확정 마커를 해제하고, 목적지 확정 직전의 검색 결과 페이지와 선택 상태로 돌아갑니다.
 - 목적지 경로선 중간에는 총 이동거리를 `m` 또는 `km` 단위로 표시하며, 화면 오른쪽 공간이 부족하면 왼쪽으로 펼쳐지게 배치합니다.
 
@@ -291,7 +299,24 @@ CurrentLocationActivity
   -> KakaoMapController.showRoute(...)
 ```
 
-현재는 요청 인터페이스와 repository 메서드까지만 존재합니다. 다음 구현에서는 경로 좌표·거리·시간을 받을 DTO를 추가하고, `KakaoMapController.showRoute()`가 Kakao `RouteLine`을 실제로 생성하도록 연결합니다.
+현재 `RouteInfo`와 `KakaoMapController.showRoute()`는 백엔드가 내려준 WGS84 polyline을 Kakao 지도 경로선으로 표시합니다. 목적지 화면은 같은 API를 `ROUTE_WITH_STATIONS` 모드로 호출해 기본 경로와 추천 주유소를 함께 처리합니다.
+
+### 목적지 경로 추천 조회
+
+```text
+목적지 확정 버튼
+  -> RouteStationSearchRequest(routeResultMode = ROUTE_WITH_STATIONS)
+  -> POST /api/stations/route
+  -> StationSearchResponse.route + stations[Top 5]
+  -> KakaoMapController.showRoute(...)
+  -> KakaoMapController.showRouteRecommendedStations(...)
+  -> StationListAdapter
+```
+
+- `route.routePolyline`은 현위치-목적지 기본 경로로 표시합니다.
+- `stations[]`는 경로 주변 주유소 추천 Top 5로 사용하며, 기존 주유소 리스트 아이템 형식으로 표시합니다.
+- 각 추천 주유소의 `detourRoute.routePolyline`은 사용자가 해당 추천을 선택했을 때 노란 경유 경로선으로 표시합니다.
+- `routeExtraDistanceMeters`가 있으면 추가 이동거리 라벨에 우선 사용하고, 없으면 `detourRoute.distanceMeters - route.distanceMeters`로 보강합니다.
 
 ## 저장소 구조
 

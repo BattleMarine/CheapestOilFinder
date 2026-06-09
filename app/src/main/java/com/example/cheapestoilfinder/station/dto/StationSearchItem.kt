@@ -20,6 +20,7 @@ data class StationSearchItem(
     var estimatedTravelFuelCostWon: Int? = null,
     var estimatedTotalCostWon: Int? = null,
     var routeExtraDistanceMeters: Int? = null,
+    var detourRoute: RouteSummaryResponse? = null,
     var notes: List<String>? = null,
     var updatedAt: String? = null
 )
