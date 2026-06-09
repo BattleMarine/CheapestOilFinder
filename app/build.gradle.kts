@@ -115,3 +115,16 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
+
+tasks.matching { task ->
+    task.name == "generateDebugBuildConfig" || task.name == "generateReleaseBuildConfig"
+}.configureEach {
+    inputs.property("kakaoNativeAppKey", kakaoNativeAppKey)
+    inputs.property("backendBaseUrl", backendBaseUrl)
+    if (kakaoSecretTextFile.exists()) {
+        inputs.file(kakaoSecretTextFile)
+    }
+    if (backendBaseUrlTextFile.exists()) {
+        inputs.file(backendBaseUrlTextFile)
+    }
+}

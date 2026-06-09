@@ -8,5 +8,6 @@ data class StationSearchResponse(
     var radiusKm: Double = 0.0,
     var resultCount: Int = 0,
     var referenceLabel: String? = null,
-    var stations: MutableList<StationSearchItem> = mutableListOf()
+    var stations: MutableList<StationSearchItem> = mutableListOf(),
+    var route: RouteSummaryResponse? = null
 )

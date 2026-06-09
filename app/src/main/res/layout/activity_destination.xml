@@ -35,54 +35,337 @@
                 android:text="@string/destination_map_placeholder_body"
                 android:textColor="#6C5E53"
                 android:textSize="14sp" />
+
         </LinearLayout>
     </FrameLayout>
 
-    <Button
-        android:id="@+id/button_back"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|start"
-        android:layout_margin="20dp"
-        android:background="@drawable/bg_overlay_circle_button"
-        android:contentDescription="@string/back_button"
-        android:padding="0dp"
-        android:text="@string/back_button_icon"
-        android:textAllCaps="false"
-        android:textColor="#2F2A27"
-        android:textSize="20sp" />
-
     <LinearLayout
+        android:id="@+id/destination_top_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
-        android:orientation="vertical"
-        android:padding="20dp">
+        android:layout_gravity="top"
+        android:elevation="10dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="20dp">
 
         <Button
-            android:id="@+id/button_destination_gps"
+            android:id="@+id/button_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_overlay_circle_button"
+            android:contentDescription="@string/back_button"
+            android:padding="0dp"
+            android:text="@string/back_button_icon"
+            android:textAllCaps="false"
+            android:textColor="#2F2A27"
+            android:textSize="20sp" />
+
+        <LinearLayout
+            android:id="@+id/destination_search_bar"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:background="@drawable/bg_destination_search_bar"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?android:attr/selectableItemBackgroundBorderless"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="16dp">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:contentDescription="@null"
+                android:src="@android:drawable/ic_menu_search"
+                android:tint="#6C5E53" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="@string/destination_search_bar_hint"
+                android:textColor="#6C5E53"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/destination_zoom_controls_container"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="94dp"
+        android:elevation="8dp"
+        android:orientation="vertical">
+
+        <Button
+            android:id="@+id/button_zoom_in"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_gravity="end"
+            android:layout_marginBottom="10dp"
             android:background="@drawable/bg_overlay_circle_button"
-            android:contentDescription="@string/gps_cta"
+            android:contentDescription="@string/zoom_in_cta"
             android:padding="0dp"
-            android:text="@string/gps_button_icon"
+            android:text="@string/zoom_in_icon"
             android:textAllCaps="false"
             android:textColor="#2F2A27"
             android:textSize="20sp" />
 
         <Button
-            android:id="@+id/button_set_destination"
+            android:id="@+id/button_zoom_out"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="end"
+            android:background="@drawable/bg_overlay_circle_button"
+            android:contentDescription="@string/zoom_out_cta"
+            android:padding="0dp"
+            android:text="@string/zoom_out_icon"
+            android:textAllCaps="false"
+            android:textColor="#2F2A27"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/button_destination_gps"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="28dp"
+        android:background="@drawable/bg_overlay_circle_button"
+        android:contentDescription="@string/gps_cta"
+        android:elevation="8dp"
+        android:padding="0dp"
+        android:text="@string/gps_button_icon"
+        android:textAllCaps="false"
+        android:textColor="#2F2A27"
+        android:textSize="20sp" />
+
+    <Button
+        android:id="@+id/button_set_destination"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_margin="20dp"
+        android:backgroundTint="#C96A18"
+        android:elevation="18dp"
+        android:padding="16dp"
+        android:text="@string/set_destination_cta"
+        android:textAllCaps="false"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/destination_search_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFF8F1"
+        android:clickable="true"
+        android:elevation="48dp"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:paddingTop="20dp"
+        android:paddingBottom="20dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="20dp">
+
+            <Button
+                android:id="@+id/button_search_overlay_close"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/bg_overlay_circle_button"
+                android:contentDescription="@string/search_overlay_close"
+                android:padding="0dp"
+                android:text="@string/back_button_icon"
+                android:textAllCaps="false"
+                android:textColor="#2F2A27"
+                android:textSize="18sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/destination_search_overlay_title"
+                android:textColor="#2F2A27"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginHorizontal="20dp"
+            android:layout_marginTop="16dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/edittext_destination_search"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@drawable/bg_destination_search_bar"
+                android:hint="@string/destination_search_input_hint"
+                android:imeOptions="actionSearch"
+                android:inputType="textPostalAddress"
+                android:maxLines="1"
+                android:paddingHorizontal="16dp"
+                android:textColor="#2F2A27"
+                android:textColorHint="#9A8A7E"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/button_destination_search_submit"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/bg_overlay_circle_button"
+                android:contentDescription="@string/destination_search_submit"
+                android:padding="0dp"
+                android:text="🔎"
+                android:textAllCaps="false"
+                android:textColor="#2F2A27"
+                android:textSize="20sp" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/text_destination_search_hint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:backgroundTint="#C96A18"
-            android:padding="16dp"
-            android:text="@string/set_destination_cta"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp" />
+            android:layout_marginHorizontal="20dp"
+            android:layout_marginTop="14dp"
+            android:text="@string/destination_search_placeholder"
+            android:textColor="#6C5E53"
+            android:textSize="14sp" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="16dp"
+            android:layout_marginHorizontal="20dp">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler_destination_autocomplete"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingBottom="12dp"
+                android:scrollbars="vertical"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/text_destination_search_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:gravity="center"
+                android:paddingHorizontal="12dp"
+                android:text="@string/destination_search_autocomplete_empty"
+                android:textColor="#9A8A7E"
+                android:textSize="14sp"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/destination_search_results_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:elevation="16dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/destination_search_results_sheet"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_station_sheet"
+            android:orientation="vertical"
+            android:paddingTop="10dp">
+
+            <LinearLayout
+                android:id="@+id/destination_search_results_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="14dp">
+
+                <FrameLayout
+                    android:id="@+id/destination_search_results_drag_handle_touch_area"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp">
+
+                    <View
+                        android:id="@+id/destination_search_results_drag_handle"
+                        android:layout_width="96dp"
+                        android:layout_height="6dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_station_sheet_handle" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="20dp">
+
+                    <TextView
+                        android:id="@+id/destination_search_results_title"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/destination_search_results_title"
+                        android:textColor="#1F1A17"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/destination_search_results_count"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#6C5E53"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/destination_search_results_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                android:paddingHorizontal="24dp"
+                android:text="@string/destination_search_results_empty"
+                android:textColor="#6C5E53"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler_destination_search_results"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="12dp"
+                android:layout_weight="1"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="20dp" />
+        </LinearLayout>
+    </FrameLayout>
 
 </FrameLayout>

@@ -25,17 +25,25 @@ enum class UserFuelType(
                 "GAS_HIGH" -> GAS_HIGH
                 "GAS_LOW" -> GAS_LOW
                 "DIESEL", "DISL" -> DIESEL
-                "LPG" -> LPG
+                "LPG" -> GAS_LOW
                 else -> GAS_LOW
             }
         }
 
         fun fromSpinnerIndex(index: Int): UserFuelType {
-            return values().getOrElse(index) { GAS_LOW }
+            return selectableValues().getOrElse(index) { GAS_LOW }
         }
 
         fun spinnerLabels(context: Context): List<String> {
-            return values().map { it.displayLabel(context) }
+            return selectableValues().map { it.displayLabel(context) }
+        }
+
+        fun spinnerIndexFor(type: UserFuelType): Int {
+            return selectableValues().indexOf(type).takeIf { it >= 0 } ?: 1
+        }
+
+        private fun selectableValues(): List<UserFuelType> {
+            return listOf(GAS_HIGH, GAS_LOW, DIESEL)
         }
     }
 }

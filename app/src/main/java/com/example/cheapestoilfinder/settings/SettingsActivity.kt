@@ -47,7 +47,7 @@ class SettingsActivity : Activity() {
 
     private fun populateSettings() {
         val settings = preferenceManager.loadSettings()
-        fuelTypeSpinner.setSelection(settings.fuelType.ordinal)
+        fuelTypeSpinner.setSelection(UserFuelType.spinnerIndexFor(settings.fuelType))
         fuelEfficiencyEditText.setText(formatDouble(settings.fuelEfficiencyKmPerLiter))
         refuelAmountEditText.setText(formatDouble(settings.refuelAmountLiter))
     }
@@ -60,7 +60,7 @@ class SettingsActivity : Activity() {
         val refuelAmount = refuelAmountEditText.text?.toString()?.trim()?.toDoubleOrNull()
 
         var isValid = true
-        if (fuelTypeSpinner.selectedItemPosition !in UserFuelType.values().indices) {
+        if (fuelTypeSpinner.selectedItemPosition !in 0 until UserFuelType.spinnerLabels(this).size) {
             Toast.makeText(this, R.string.settings_validation_fuel_type_required, Toast.LENGTH_SHORT).show()
             isValid = false
         }

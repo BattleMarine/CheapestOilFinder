@@ -11,6 +11,9 @@ import android.view.View
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ArrayAdapter
+import android.widget.AdapterView
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -21,12 +24,14 @@ import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
+import com.example.cheapestoilfinder.map.model.RouteInfo
 import com.example.cheapestoilfinder.map.model.StationCostSummary
 import com.example.cheapestoilfinder.station.BackendStationRepository
 import com.example.cheapestoilfinder.station.BrandLogoResolver
 import com.example.cheapestoilfinder.station.StationDisplayMapper
 import com.example.cheapestoilfinder.station.api.ApiCallback
 import com.example.cheapestoilfinder.station.dto.NearbyStationSearchRequest
+import com.example.cheapestoilfinder.station.dto.RouteStationSearchRequest
 import com.example.cheapestoilfinder.station.dto.StationDetailResponse
 import com.example.cheapestoilfinder.station.dto.StationSearchResponse
 import com.example.cheapestoilfinder.settings.CostCalculator
@@ -54,6 +59,7 @@ class CurrentLocationActivity : Activity() {
     private var stationListScrim: View? = null
     private var stationListRecycler: RecyclerView? = null
     private var stationListEmptyView: View? = null
+    private var stationListFuelTypeSpinner: Spinner? = null
     private var stationInfoContainer: View? = null
     private var stationInfoSheet: View? = null
     private var stationInfoHeader: View? = null
@@ -68,6 +74,7 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoRouteDistanceValueView: TextView? = null
     private var stationInfoCostContainer: LinearLayout? = null
     private var loadedStations: List<GasStation> = emptyList()
+    private var rawNearbyStations: List<GasStation> = emptyList()
     private var selectedStation: GasStation? = null
     private var pendingGpsActionAfterPermission: (() -> Unit)? = null
     private var currentGpsPoint: LocationPoint? = null
@@ -87,6 +94,7 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoSheetDragStartTranslationY = 0f
     private lateinit var preferenceManager: UserPreferenceManager
     private var userSettings = UserSettings()
+    private var temporaryStationListFuelType: UserFuelType? = null
     private var lastMinimizedBackPressedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -159,16 +167,22 @@ class CurrentLocationActivity : Activity() {
         }
 
         userSettings = preferenceManager.loadSettings()
-        if (loadedStations.isNotEmpty()) {
-            val decoratedStations = decorateStationsForCurrentPreferences(loadedStations)
-            loadedStations = decoratedStations
-            stationListAdapter.submitList(sortStationsForDisplay(decoratedStations))
+        syncStationListFuelTypeSpinner()
+        if (rawNearbyStations.isNotEmpty()) {
+            val visibleStations = prepareStationsForCurrentFuelType(rawNearbyStations)
+            loadedStations = visibleStations
+            stationListAdapter.submitList(sortStationsForDisplay(visibleStations))
             selectedStation?.let { currentSelectedStation ->
-                val refreshedStation = decoratedStations.firstOrNull { it.id == currentSelectedStation.id }
-                    ?: decorateStationForCurrentPreferences(currentSelectedStation)
-                selectedStation = refreshedStation
-                renderStationInfo(refreshedStation)
+                val refreshedStation = visibleStations.firstOrNull { it.id == currentSelectedStation.id }
+                if (refreshedStation == null) {
+                    selectedStation = null
+                    hideStationInfo(animated = false)
+                } else {
+                    selectedStation = refreshedStation
+                    renderStationInfo(refreshedStation)
+                }
             }
+            mapController?.showStations(visibleStations)
         }
     }
 
@@ -250,9 +264,8 @@ class CurrentLocationActivity : Activity() {
 
         stationRepository?.searchNearbyStations(request, object : ApiCallback<StationSearchResponse> {
             override fun onSuccess(result: StationSearchResponse) {
-                val stations: List<GasStation> = decorateStationsForCurrentPreferences(
-                    StationDisplayMapper.toGasStations(result)
-                )
+                rawNearbyStations = StationDisplayMapper.toGasStations(result)
+                val stations = prepareStationsForCurrentFuelType(rawNearbyStations)
                 Log.i(TAG, "Loaded stations around GPS location: ${stations.size}")
                 mapController?.showStations(stations)
                 showStationList(stations)
@@ -326,6 +339,7 @@ class CurrentLocationActivity : Activity() {
         stationListScrim = findViewById(R.id.station_list_scrim)
         stationListRecycler = findViewById(R.id.station_list_recycler)
         stationListEmptyView = findViewById(R.id.station_list_empty)
+        stationListFuelTypeSpinner = findViewById(R.id.spinner_station_list_fuel_type)
 
         stationListAdapter = StationListAdapter { station ->
             openStationInfo(station)
@@ -340,6 +354,31 @@ class CurrentLocationActivity : Activity() {
         stationListScrim?.isClickable = false
         stationListScrim?.isEnabled = false
         stationListScrim?.visibility = View.GONE
+
+        val fuelTypeAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            UserFuelType.spinnerLabels(this)
+        ).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        stationListFuelTypeSpinner?.adapter = fuelTypeAdapter
+        stationListFuelTypeSpinner?.setSelection(
+            UserFuelType.spinnerIndexFor(temporaryStationListFuelType ?: userSettings.fuelType)
+        )
+        stationListFuelTypeSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selectedFuelType = UserFuelType.fromSpinnerIndex(position)
+                if (temporaryStationListFuelType == selectedFuelType) {
+                    return
+                }
+                temporaryStationListFuelType = selectedFuelType
+                Log.i(TAG, "Station list fuel type changed temporarily to $selectedFuelType")
+                refreshStationsForTemporaryFuelType()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
 
         stationListDragHandleTouchArea?.setOnTouchListener { _, event ->
             handleStationSheetTouch(event)
@@ -747,6 +786,67 @@ class CurrentLocationActivity : Activity() {
         mapController?.focusStation(station.locationPoint, 15)
         showStationInfo(station)
         requestStationDetail(station)
+        requestRouteToStation(station)
+    }
+
+    private fun requestRouteToStation(station: GasStation) {
+        val origin = currentGpsPoint
+        if (origin == null) {
+            Log.w(TAG, "Skipping route request because current GPS point is unavailable.")
+            return
+        }
+
+        val destination = station.locationPoint
+        val request = RouteStationSearchRequest(
+            originLatitude = origin.latitude,
+            originLongitude = origin.longitude,
+            destinationLatitude = destination.latitude,
+            destinationLongitude = destination.longitude,
+            routePolyline = null,
+            radiusKm = 5.0,
+            fuelAmountLiters = userSettings.refuelAmountLiter,
+            fuelEfficiencyKmPerLiter = userSettings.fuelEfficiencyKmPerLiter,
+            fuelTypes = UserFuelType.values().map { it.backendFuelType },
+            originLabel = origin.name.ifBlank { "현재 위치" },
+            destinationLabel = station.name
+        )
+
+        stationRepository?.searchRouteStations(request, object : ApiCallback<StationSearchResponse> {
+            override fun onSuccess(result: StationSearchResponse) {
+                val route = result.route
+                val routePolyline = route?.routePolyline?.takeIf { it.isNotBlank() }
+                    ?: buildFallbackRoutePolyline(origin, destination)
+                val usingFallbackPolyline = route?.routePolyline.isNullOrBlank()
+
+                val routeInfo = RouteInfo(
+                    origin = origin,
+                    destination = destination.copy(
+                        name = station.name,
+                        address = station.locationPoint.address
+                    ),
+                    distanceMeters = route?.distanceMeters ?: station.distanceMeters,
+                    durationSeconds = route?.durationSeconds ?: 0,
+                    tollFeeWon = route?.tollFeeWon ?: 0,
+                    polyline = routePolyline
+                )
+                if (usingFallbackPolyline) {
+                    Log.w(
+                        TAG,
+                        "Route response did not contain a polyline for station ${station.id}; using straight-line fallback."
+                    )
+                } else {
+                    Log.i(
+                        TAG,
+                        "Route loaded for station ${station.id}: distance=${route?.distanceMeters}, duration=${route?.durationSeconds}"
+                    )
+                }
+                mapController?.showRoute(routeInfo)
+            }
+
+            override fun onError(error: Throwable) {
+                Log.w(TAG, "Failed to load route for ${station.id}", error)
+            }
+        })
     }
 
     private fun requestStationDetail(station: GasStation) {
@@ -978,7 +1078,48 @@ class CurrentLocationActivity : Activity() {
         return stations.map { decorateStationForCurrentPreferences(it) }
     }
 
+    private fun filterStationsForCurrentPreferences(stations: List<GasStation>): List<GasStation> {
+        return stations.filter { station ->
+            resolveSelectedFuelPrice(station) != null
+        }
+    }
+
+    private fun prepareStationsForCurrentFuelType(stations: List<GasStation>): List<GasStation> {
+        val decoratedStations = decorateStationsForCurrentPreferences(stations)
+        return filterStationsForCurrentPreferences(decoratedStations)
+    }
+
+    private fun refreshStationsForTemporaryFuelType() {
+        if (rawNearbyStations.isEmpty()) {
+            return
+        }
+        val visibleStations = prepareStationsForCurrentFuelType(rawNearbyStations)
+        loadedStations = visibleStations
+        stationListAdapter.submitList(sortStationsForDisplay(visibleStations))
+        selectedStation?.let { currentSelectedStation ->
+            val refreshedStation = visibleStations.firstOrNull { it.id == currentSelectedStation.id }
+            if (refreshedStation == null) {
+                selectedStation = null
+                hideStationInfo(animated = false)
+            } else {
+                selectedStation = refreshedStation
+                renderStationInfo(refreshedStation)
+            }
+        }
+        mapController?.showStations(visibleStations)
+    }
+
+    private fun syncStationListFuelTypeSpinner() {
+        val spinner = stationListFuelTypeSpinner ?: return
+        val targetFuelType = temporaryStationListFuelType ?: userSettings.fuelType
+        val targetIndex = UserFuelType.spinnerIndexFor(targetFuelType)
+        if (spinner.selectedItemPosition != targetIndex) {
+            spinner.setSelection(targetIndex, false)
+        }
+    }
+
     private fun decorateStationForCurrentPreferences(station: GasStation): GasStation {
+        val activeFuelType = resolveActiveFuelType()
         val selectedFuelPrice = resolveSelectedFuelPrice(station)
         val distanceMeters = station.distanceMeters.takeIf { it > 0 }
         if (selectedFuelPrice == null || distanceMeters == null) {
@@ -987,7 +1128,7 @@ class CurrentLocationActivity : Activity() {
             }
             return station.copy(
                 costSummary = StationCostSummary(
-                    selectedFuelType = userSettings.fuelType,
+                    selectedFuelType = activeFuelType,
                     selectedFuelPricePerLiter = selectedFuelPrice,
                     distanceMeters = distanceMeters,
                     distanceKm = distanceMeters?.div(1000.0),
@@ -1012,7 +1153,7 @@ class CurrentLocationActivity : Activity() {
 
         return station.copy(
             costSummary = StationCostSummary(
-                selectedFuelType = userSettings.fuelType,
+                selectedFuelType = activeFuelType,
                 selectedFuelPricePerLiter = selectedFuelPrice,
                 distanceMeters = distanceMeters,
                 distanceKm = distanceMeters / 1000.0,
@@ -1024,9 +1165,13 @@ class CurrentLocationActivity : Activity() {
         )
     }
 
+    private fun resolveActiveFuelType(): UserFuelType {
+        return temporaryStationListFuelType ?: userSettings.fuelType
+    }
+
     private fun resolveSelectedFuelPrice(station: GasStation): Int? {
         val prices = station.fuelPrices ?: return null
-        return when (userSettings.fuelType) {
+        return when (resolveActiveFuelType()) {
             UserFuelType.GAS_HIGH -> prices.premiumGasolineWon
             UserFuelType.GAS_LOW -> prices.regularGasolineWon
             UserFuelType.DIESEL -> prices.dieselWon
@@ -1179,6 +1324,15 @@ class CurrentLocationActivity : Activity() {
             results
         )
         return results[0]
+    }
+
+    private fun buildFallbackRoutePolyline(origin: LocationPoint, destination: LocationPoint): String {
+        return listOf(
+            origin.latitude to origin.longitude,
+            destination.latitude to destination.longitude
+        ).joinToString(";") { (latitude, longitude) ->
+            "$latitude,$longitude"
+        }
     }
 
     companion object {

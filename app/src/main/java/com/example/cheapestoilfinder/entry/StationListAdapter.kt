@@ -67,14 +67,10 @@ class StationListAdapter(
 
         private fun buildCostSummaryText(item: GasStation): String {
             val summary = item.costSummary ?: return itemView.context.getString(R.string.station_list_cost_summary_unavailable)
-            val distanceText = summary.distanceMeters?.takeIf { it > 0 }?.let { formatDistance(it) }
-                ?: itemView.context.getString(R.string.station_info_distance_unavailable)
             val moveCostText = formatCostText(summary.moveCostWon)
-            val refuelCostText = formatCostText(summary.refuelCostWon)
             val totalCostText = formatCostText(summary.totalExpectedCostWon)
 
             if (moveCostText == itemView.context.getString(R.string.station_info_cost_unavailable) &&
-                refuelCostText == itemView.context.getString(R.string.station_info_cost_unavailable) &&
                 totalCostText == itemView.context.getString(R.string.station_info_cost_unavailable)
             ) {
                 return itemView.context.getString(R.string.station_list_cost_summary_unavailable)
@@ -82,9 +78,7 @@ class StationListAdapter(
 
             return itemView.context.getString(
                 R.string.station_list_cost_summary_format,
-                distanceText,
                 moveCostText,
-                refuelCostText,
                 totalCostText
             )
         }

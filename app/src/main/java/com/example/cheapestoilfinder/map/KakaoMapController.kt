@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
 import com.example.cheapestoilfinder.R
+import com.example.cheapestoilfinder.destination.DestinationSearchSuggestion
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
@@ -66,15 +67,26 @@ class KakaoMapController(
     private var shapeManager: ShapeManager? = null
     private var currentLocationRadiusLayer: ShapeLayer? = null
     private var currentLocationRadiusPolyline: Polyline? = null
+    private var routeLayer: ShapeLayer? = null
+    private var routePolyline: Polyline? = null
     private var stationLabelLayer: LabelLayer? = null
     private var stationPriceLabelLayer: LabelLayer? = null
+    private var destinationSearchLabelLayer: LabelLayer? = null
+    private var routeDistanceLabelLayer: LabelLayer? = null
     private var currentLocationLabelLayer: LabelLayer? = null
     private var currentLocationLabel: Label? = null
     private var currentLocationLabelStyles: LabelStyles? = null
+    private var destinationSearchDefaultLabelStyles: LabelStyles? = null
+    private var destinationSearchSelectedLabelStyles: LabelStyles? = null
+    private var destinationSearchCommittedLabelStyles: LabelStyles? = null
+    private var routeDistanceLabel: Label? = null
     private val stationLabelStylesByResId = mutableMapOf<Int, LabelStyles>()
     private val stationLabelsById = mutableMapOf<String, Label>()
     private val stationPriceLabelsById = mutableMapOf<String, Label>()
+    private val destinationSearchLabelsByKey = mutableMapOf<String, Label>()
     private val renderedStations = mutableListOf<GasStation>()
+    private val renderedDestinationSearchResults = mutableListOf<DestinationSearchSuggestion>()
+    private var destinationSearchResultsBottomPaddingPx: Int = 0
     private var lastCurrentLocationPoint: LocationPoint? = null
     private var lastCameraPoint: LocationPoint? = null
     private var lastCameraShowsCurrentLocation: Boolean = false
@@ -90,6 +102,9 @@ class KakaoMapController(
     private var currentPriceOpacity: Float = 1f
     private var currentPriceScale: Float = 1f
     private var stationSelectedListener: ((GasStation) -> Unit)? = null
+    private var destinationSearchResultSelectedListener: ((DestinationSearchSuggestion) -> Unit)? = null
+    private var selectedDestinationSearchResultKey: String? = null
+    private var committedDestinationSearchResultKey: String? = null
 
     override fun bind(activity: Activity) {
         this.activity = activity
@@ -132,11 +147,19 @@ class KakaoMapController(
                     shapeManager = null
                     currentLocationRadiusLayer = null
                     currentLocationRadiusPolyline = null
+                    routeLayer = null
+                    routePolyline = null
                     stationLabelLayer = null
                     stationPriceLabelLayer = null
+                    destinationSearchLabelLayer = null
+                    routeDistanceLabelLayer = null
+                    routeDistanceLabel = null
                     currentLocationLabelLayer = null
                     stationLabelStylesByResId.clear()
                     currentLocationLabelStyles = null
+                    destinationSearchDefaultLabelStyles = null
+                    destinationSearchSelectedLabelStyles = null
+                    destinationSearchCommittedLabelStyles = null
                     mapPlaceholder?.visibility = View.VISIBLE
                 }
 
@@ -180,6 +203,10 @@ class KakaoMapController(
                     }
 
                     renderStationOverlaysForZoom(currentZoomLevel)
+                    renderRoute(renderedRoute)
+                    renderedRoute?.let {
+                        renderRouteDistanceLabel(it, parseRoutePolyline(it.polyline))
+                    }
                 }
             }
         )
@@ -202,6 +229,24 @@ class KakaoMapController(
 
         if (kakaoMap == null) {
             Log.d(TAG, "moveCamera queued. kakaoMap is not ready yet.")
+            return
+        }
+
+        applyCameraMove(point, zoomLevel, false)
+    }
+
+    override fun moveCameraAboveBottomSheet(point: LocationPoint, zoomLevel: Int) {
+        pendingCameraPoint = point
+        pendingCameraZoomLevel = zoomLevel
+        // 하단 절반 시트가 열려 있을 때 선택 지점이 가려지지 않도록
+        // 지도상 목표 위치를 전체 화면 기준 약 25% 지점으로 올립니다.
+        val height = mapContainer?.height ?: 0
+        pendingCameraPaddingBottom = height / 2
+        pendingCameraShowsCurrentLocation = false
+        hasPendingCameraMove = true
+
+        if (kakaoMap == null) {
+            Log.d(TAG, "moveCameraAboveBottomSheet queued. kakaoMap is not ready yet.")
             return
         }
 
@@ -249,6 +294,14 @@ class KakaoMapController(
         adjustFixedZoom(zoomingIn = false)
     }
 
+    fun zoomInOneLevel() {
+        adjustOneLevelZoom(delta = 1)
+    }
+
+    fun zoomOutOneLevel() {
+        adjustOneLevelZoom(delta = -1)
+    }
+
     override fun showStations(stations: List<GasStation>) {
         renderedStations.clear()
         renderedStations.addAll(stations)
@@ -257,22 +310,92 @@ class KakaoMapController(
         fitCurrentLocationAndStations()
     }
 
+    override fun showDestinationSearchResults(
+        results: List<DestinationSearchSuggestion>,
+        bottomPaddingPx: Int
+    ) {
+        val requestedCount = results.size
+        renderedDestinationSearchResults.clear()
+        renderedDestinationSearchResults.addAll(
+            results.filter { it.latitude != null && it.longitude != null }
+        )
+        if (renderedDestinationSearchResults.none { it.destinationSearchKey() == selectedDestinationSearchResultKey }) {
+            selectedDestinationSearchResultKey = null
+        }
+        if (renderedDestinationSearchResults.none { it.destinationSearchKey() == committedDestinationSearchResultKey }) {
+            committedDestinationSearchResultKey = null
+        }
+        destinationSearchResultsBottomPaddingPx = bottomPaddingPx.coerceAtLeast(0)
+        Log.d(TAG, "showDestinationSearchResults requested. requested=$requestedCount, drawable=${renderedDestinationSearchResults.size}")
+        renderDestinationSearchResults()
+        fitDestinationSearchResults()
+    }
+
+    override fun selectDestinationSearchResult(result: DestinationSearchSuggestion) {
+        selectedDestinationSearchResultKey = result.destinationSearchKey()
+        committedDestinationSearchResultKey = null
+        Log.d(TAG, "selectDestinationSearchResult requested. key=$selectedDestinationSearchResultKey")
+        renderDestinationSearchResults()
+    }
+
+    fun commitDestinationSearchResult(result: DestinationSearchSuggestion) {
+        val key = result.destinationSearchKey()
+        selectedDestinationSearchResultKey = key
+        committedDestinationSearchResultKey = key
+        renderedDestinationSearchResults.clear()
+        renderedDestinationSearchResults.add(result)
+        destinationSearchResultsBottomPaddingPx = 0
+        Log.d(TAG, "commitDestinationSearchResult requested. key=$key")
+        renderDestinationSearchResults()
+    }
+
+    fun restoreDestinationSearchResults(
+        results: List<DestinationSearchSuggestion>,
+        selectedResult: DestinationSearchSuggestion?
+    ) {
+        renderedDestinationSearchResults.clear()
+        renderedDestinationSearchResults.addAll(
+            results.filter { it.latitude != null && it.longitude != null }
+        )
+        selectedDestinationSearchResultKey = selectedResult?.destinationSearchKey()
+        committedDestinationSearchResultKey = null
+        Log.d(TAG, "restoreDestinationSearchResults requested. size=${renderedDestinationSearchResults.size}")
+        renderDestinationSearchResults()
+    }
+
+    fun clearRoute() {
+        renderedRoute = null
+        clearRenderedRoute()
+    }
+
     override fun showRoute(routeInfo: RouteInfo) {
         renderedRoute = routeInfo
         Log.d(TAG, "showRoute requested.")
+        renderRoute(routeInfo)
+        fitRoute(routeInfo)
+        renderRouteDistanceLabel(routeInfo, parseRoutePolyline(routeInfo.polyline))
     }
 
     override fun setOnStationSelectedListener(listener: ((GasStation) -> Unit)?) {
         stationSelectedListener = listener
     }
 
+    override fun setOnDestinationSearchResultSelectedListener(listener: ((DestinationSearchSuggestion) -> Unit)?) {
+        destinationSearchResultSelectedListener = listener
+    }
+
     override fun clearMapObjects() {
         clearRenderedStations()
         clearRenderedStationPrices()
+        clearRenderedDestinationSearchResults()
+        clearRenderedRoute()
         clearCurrentLocationLabel()
         clearCurrentLocationRadius()
         renderedStations.clear()
+        renderedDestinationSearchResults.clear()
         renderedRoute = null
+        selectedDestinationSearchResultKey = null
+        destinationSearchResultsBottomPaddingPx = 0
         Log.d(TAG, "clearMapObjects requested.")
     }
 
@@ -314,6 +437,25 @@ class KakaoMapController(
             )
         }
 
+        if (destinationSearchLabelLayer == null) {
+            destinationSearchLabelLayer = labelManager.addLayer(
+                LabelLayerOptions.from("destination-search-layer")
+                    .setVisible(true)
+                    .setCompetitionType(CompetitionType.None)
+                    .setOrderingType(OrderingType.Rank)
+                    .setZOrder(8600)
+            )
+        }
+
+        if (routeDistanceLabelLayer == null) {
+            routeDistanceLabelLayer = labelManager.addLayer(
+                LabelLayerOptions.from("route-distance-layer")
+                    .setVisible(true)
+                    .setCompetitionType(CompetitionType.None)
+                    .setZOrder(8700)
+            )
+        }
+
         if (currentLocationLabelStyles == null) {
             currentLocationLabelStyles = labelManager.addLabelStyles(
                 LabelStyles.from(
@@ -326,6 +468,13 @@ class KakaoMapController(
         if (currentLocationRadiusLayer == null) {
             currentLocationRadiusLayer = shapeManager.addLayer(
                 ShapeLayerOptions.from("current-location-radius-layer", 9000, ShapeLayerPass.Overlay)
+                    .setVisible(true)
+            )
+        }
+
+        if (routeLayer == null) {
+            routeLayer = shapeManager.addLayer(
+                ShapeLayerOptions.from("route-line-layer", 8500, ShapeLayerPass.Overlay)
                     .setVisible(true)
             )
         }
@@ -355,6 +504,10 @@ class KakaoMapController(
                 } else if (renderedStations.isNotEmpty()) {
                     renderStationOverlaysForZoom(currentZoomLevel)
                 }
+
+                if (renderedDestinationSearchResults.isNotEmpty()) {
+                    renderDestinationSearchResults()
+                }
             }
         })
     }
@@ -367,10 +520,21 @@ class KakaoMapController(
                 label: Label
             ): Boolean {
                 val tag = label.tag
-                val station = tag as? GasStation ?: return false
-                Log.d(TAG, "station label clicked: ${station.id}")
-                stationSelectedListener?.invoke(station)
-                return true
+                val station = tag as? GasStation
+                if (station != null) {
+                    Log.d(TAG, "station label clicked: ${station.id}")
+                    stationSelectedListener?.invoke(station)
+                    return true
+                }
+
+                val destinationSearchResult = tag as? DestinationSearchSuggestion
+                if (destinationSearchResult != null) {
+                    Log.d(TAG, "destination search label clicked: ${destinationSearchResult.displayText}")
+                    destinationSearchResultSelectedListener?.invoke(destinationSearchResult)
+                    return true
+                }
+
+                return false
             }
         })
     }
@@ -431,6 +595,20 @@ class KakaoMapController(
 
     private fun nextFixedZoomOut(currentZoom: Int): Int {
         return fixedZoomLevels.lastOrNull { it < currentZoom } ?: fixedZoomLevels.first()
+    }
+
+    private fun adjustOneLevelZoom(delta: Int) {
+        val targetZoom = (currentZoomLevel + delta)
+            .coerceIn(MIN_FREE_ZOOM_LEVEL, MAX_FREE_ZOOM_LEVEL)
+
+        if (targetZoom == currentZoomLevel) {
+            return
+        }
+
+        val map = kakaoMap ?: return
+        map.moveCamera(CameraUpdateFactory.zoomTo(targetZoom))
+        currentZoomLevel = targetZoom
+        Log.d(TAG, "zoom one level requested. targetZoom=$targetZoom")
     }
 
     private fun renderStationOverlaysForZoom(zoomLevel: Int) {
@@ -555,6 +733,114 @@ class KakaoMapController(
         Log.d(TAG, "renderStationPriceLabelsForZoom finished. priceLabels=${stationPriceLabelsById.size}")
     }
 
+    private fun renderDestinationSearchResults() {
+        ensureLabelLayers()
+        val layer = destinationSearchLabelLayer ?: return
+        val labelManager = kakaoMap?.labelManager ?: return
+
+        if (renderedDestinationSearchResults.isEmpty()) {
+            clearRenderedDestinationSearchResults()
+            return
+        }
+
+        layer.setVisible(true)
+        val orderedResults = orderDestinationSearchResultsByScreenPosition(renderedDestinationSearchResults)
+        val visibleKeys = orderedResults.mapTo(hashSetOf()) { it.destinationSearchKey() }
+        removeStaleDestinationSearchLabels(visibleKeys)
+
+        orderedResults.forEachIndexed { index, result ->
+            val point = result.toLocationPointOrNull() ?: return@forEachIndexed
+            val key = result.destinationSearchKey()
+            val isCommitted = key == committedDestinationSearchResultKey
+            val isSelected = key == selectedDestinationSearchResultKey
+            val styles = if (isCommitted) {
+                destinationSearchCommittedLabelStyles ?: labelManager.addLabelStyles(
+                    LabelStyles.from(
+                        LabelStyle.from(buildDestinationSearchCommittedMarkerBitmap())
+                            .setAnchorPoint(0.3f, 0.82f)
+                    )
+                )!!.also {
+                    destinationSearchCommittedLabelStyles = it
+                }
+            } else if (isSelected) {
+                destinationSearchSelectedLabelStyles ?: labelManager.addLabelStyles(
+                    LabelStyles.from(
+                        LabelStyle.from(buildDestinationSearchSelectedMarkerBitmap())
+                            .setAnchorPoint(0.5f, 0.7f)
+                    )
+                )!!.also {
+                    destinationSearchSelectedLabelStyles = it
+                }
+            } else {
+                destinationSearchDefaultLabelStyles ?: labelManager.addLabelStyles(
+                    LabelStyles.from(
+                        LabelStyle.from(buildDestinationSearchDefaultMarkerBitmap())
+                            .setAnchorPoint(0.5f, 0.5f)
+                    )
+                )!!.also {
+                    destinationSearchDefaultLabelStyles = it
+                }
+            }
+
+            val rank = if (isCommitted || isSelected) Long.MAX_VALUE - 1 else 2000L + index
+            val label = destinationSearchLabelsByKey[key] ?: layer.addLabel(
+                LabelOptions.from(LatLng.from(point.latitude, point.longitude))
+                    .setRank(rank)
+                    .setStyles(styles)
+                    .setTag(result)
+                    .setVisible(true)
+            ).also {
+                destinationSearchLabelsByKey[key] = it
+            }
+
+            label.setTag(result)
+            label.setRank(rank)
+            label.moveTo(LatLng.from(point.latitude, point.longitude))
+            label.changeStyles(styles)
+            label.show()
+        }
+
+        Log.d(TAG, "renderDestinationSearchResults finished. labels=${destinationSearchLabelsByKey.size}")
+    }
+
+    private fun fitDestinationSearchResults() {
+        val map = kakaoMap ?: return
+        if (renderedDestinationSearchResults.isEmpty()) {
+            return
+        }
+
+        val points = renderedDestinationSearchResults.mapNotNull {
+            it.toLocationPointOrNull()?.let { point -> LatLng.from(point.latitude, point.longitude) }
+        }
+        if (points.isEmpty()) {
+            return
+        }
+
+        // Destination search should center on the result markers themselves.
+        // Do not keep bottom-sheet padding here, because it shifts the camera
+        // as if another point below the result cluster were included.
+        map.setPadding(0, 0, 0, 0)
+
+        if (points.size == 1) {
+            val point = points.first()
+            Log.d(TAG, "fitDestinationSearchResults requested. single point")
+            map.moveCamera(
+                CameraUpdateFactory.newCenterPosition(point)
+            )
+            map.moveCamera(CameraUpdateFactory.zoomTo(15))
+            return
+        }
+
+        Log.d(TAG, "fitDestinationSearchResults requested. resultOnlyPoints=${points.size}")
+        map.moveCamera(
+            CameraUpdateFactory.fitMapPoints(
+                points.toTypedArray(),
+                120,
+                15
+            )
+        )
+    }
+
     private fun fitCurrentLocationAndStations() {
         val map = kakaoMap ?: return
         if (renderedStations.isEmpty()) {
@@ -625,6 +911,13 @@ class KakaoMapController(
         stationPriceLabelsById.clear()
     }
 
+    private fun clearRenderedDestinationSearchResults() {
+        destinationSearchLabelsByKey.values.forEach { it.remove() }
+        destinationSearchLabelsByKey.clear()
+        selectedDestinationSearchResultKey = null
+        committedDestinationSearchResultKey = null
+    }
+
     private fun removeStaleStationLabels(visibleStationIds: Set<String>) {
         val staleIds = stationLabelsById.keys.filterNot { it in visibleStationIds }
         staleIds.forEach { stationLabelsById.remove(it)?.remove() }
@@ -635,6 +928,11 @@ class KakaoMapController(
         staleIds.forEach { stationPriceLabelsById.remove(it)?.remove() }
     }
 
+    private fun removeStaleDestinationSearchLabels(visibleKeys: Set<String>) {
+        val staleKeys = destinationSearchLabelsByKey.keys.filterNot { it in visibleKeys }
+        staleKeys.forEach { destinationSearchLabelsByKey.remove(it)?.remove() }
+    }
+
     private fun clearCurrentLocationLabel() {
         currentLocationLabel?.remove()
         currentLocationLabel = null
@@ -643,6 +941,124 @@ class KakaoMapController(
     private fun clearCurrentLocationRadius() {
         currentLocationRadiusPolyline?.remove()
         currentLocationRadiusPolyline = null
+    }
+
+    private fun clearRenderedRoute() {
+        routePolyline?.remove()
+        routePolyline = null
+        routeDistanceLabel?.remove()
+        routeDistanceLabel = null
+    }
+
+    private fun renderRoute(routeInfo: RouteInfo?) {
+        clearRenderedRoute()
+        val route = routeInfo ?: return
+        if (routeLayer == null) {
+            ensureLabelLayers()
+        }
+        val layer = routeLayer ?: return
+        val points = parseRoutePolyline(route.polyline)
+        if (points.size < 2) {
+            Log.w(TAG, "Skipping route render because polyline has insufficient points.")
+            return
+        }
+
+        Log.d(TAG, "renderRoute requested: points=${points.size}, distance=${route.distanceMeters}, duration=${route.durationSeconds}")
+        val polyline = layer.addPolyline(
+            PolylineOptions.from(
+                MapPoints.fromLatLng(points),
+                9.6f,
+                Color.parseColor("#F97316")
+            )
+        )
+        polyline.show()
+        routePolyline = polyline
+        layer.setVisible(true)
+        Log.d(TAG, "renderRoute finished. polyline=${routePolyline != null}")
+    }
+
+    private fun renderRouteDistanceLabel(route: RouteInfo, points: List<LatLng>) {
+        val map = kakaoMap ?: return
+        ensureLabelLayers()
+        val layer = routeDistanceLabelLayer ?: return
+        val labelManager = map.labelManager ?: return
+        if (route.distanceMeters <= 0 || points.isEmpty()) {
+            return
+        }
+
+        routeDistanceLabel?.remove()
+        routeDistanceLabel = null
+
+        val midpoint = points[points.size / 2]
+        val screenPoint = map.toScreenPoint(midpoint)
+        val containerWidth = mapContainer?.width ?: 0
+        val density = activity?.resources?.displayMetrics?.density ?: 1f
+        val estimatedLabelWidthPx = 132f * density
+        val showOnRight = containerWidth <= 0 ||
+            screenPoint == null ||
+            screenPoint.x + estimatedLabelWidthPx < containerWidth
+        val anchorX = if (showOnRight) 0f else 1f
+        val bitmap = buildRouteDistanceBitmap(formatRouteDistance(route.distanceMeters))
+        val styles = labelManager.addLabelStyles(
+            LabelStyles.from(
+                LabelStyle.from(bitmap)
+                    .setAnchorPoint(anchorX, 0.5f)
+            )
+        ) ?: return
+
+        routeDistanceLabel = layer.addLabel(
+            LabelOptions.from(midpoint)
+                .setRank(Long.MAX_VALUE)
+                .setStyles(styles)
+                .setVisible(true)
+        )
+        routeDistanceLabel?.show()
+        layer.setVisible(true)
+    }
+
+    private fun fitRoute(routeInfo: RouteInfo) {
+        val map = kakaoMap ?: return
+        pendingCameraPaddingBottom = 0
+        map.setPadding(0, 0, 0, 0)
+        val points = parseRoutePolyline(routeInfo.polyline)
+        if (points.size >= 2) {
+            Log.d(TAG, "fitRoute requested. points=${points.size}")
+            map.moveCamera(
+                CameraUpdateFactory.fitMapPoints(
+                    points.toTypedArray(),
+                    120,
+                    15
+                )
+            )
+            return
+        }
+
+        Log.w(TAG, "fitRoute skipped because route polyline is insufficient; fitting origin/destination instead.")
+        map.moveCamera(
+            CameraUpdateFactory.fitMapPoints(
+                arrayOf(
+                    LatLng.from(routeInfo.origin.latitude, routeInfo.origin.longitude),
+                    LatLng.from(routeInfo.destination.latitude, routeInfo.destination.longitude)
+                ),
+                120,
+                15
+            )
+        )
+    }
+
+    private fun parseRoutePolyline(routePolyline: String): List<LatLng> {
+        return routePolyline
+            .split(';')
+            .mapNotNull { token ->
+                val parts = token.split(',')
+                if (parts.size < 2) {
+                    return@mapNotNull null
+                }
+
+                val latitude = parts[0].trim().toDoubleOrNull() ?: return@mapNotNull null
+                val longitude = parts[1].trim().toDoubleOrNull() ?: return@mapNotNull null
+                LatLng.from(latitude, longitude)
+            }
     }
 
     private fun renderCurrentLocationRadius(point: LocationPoint, radiusMeters: Int) {
@@ -863,9 +1279,14 @@ class KakaoMapController(
         station: GasStation,
         showDiesel: Boolean
     ): List<String> {
-        val prices = station.fuelPrices ?: return emptyList()
-        val lines = mutableListOf<String>()
+        val summary = station.costSummary
+        val selectedFuelLabel = summary?.selectedFuelType?.displayLabel(activity ?: return emptyList())
+        val selectedFuelPrice = summary?.selectedFuelPricePerLiter?.takeIf { it > 0 }?.let { formatWon(it) }
+        if (selectedFuelLabel != null && selectedFuelPrice != null) {
+            return listOf("$selectedFuelLabel $selectedFuelPrice/L")
+        }
 
+        val prices = station.fuelPrices ?: return emptyList()
         val regularGasoline = prices.regularGasolineWon?.takeIf { it > 0 }?.let { formatWon(it) }
         val premiumGasoline = prices.premiumGasolineWon?.takeIf { it > 0 }?.let { formatWon(it) }
         val diesel = if (showDiesel) {
@@ -874,7 +1295,7 @@ class KakaoMapController(
             null
         }
 
-        val gasolineLine = when {
+        val fallbackLine = when {
             regularGasoline != null && premiumGasoline != null ->
                 "휘발유(고급) $regularGasoline($premiumGasoline)"
             regularGasoline != null ->
@@ -884,10 +1305,10 @@ class KakaoMapController(
             else -> null
         }
 
-        gasolineLine?.let { lines.add(it) }
-        diesel?.let { lines.add("디젤 $it") }
-
-        return lines
+        return buildList {
+            fallbackLine?.let { add(it) }
+            diesel?.let { add("디젤 $it") }
+        }
     }
 
     private fun formatWon(value: Int): String {
@@ -945,6 +1366,150 @@ class KakaoMapController(
             zoomLevel in 13..14 -> StationMarkerDisplayMode.TOP_FIFTY
             else -> StationMarkerDisplayMode.ALL
         }
+    }
+
+    private fun buildDestinationSearchDefaultMarkerBitmap(): Bitmap {
+        return createMarkerBitmap(
+            fillColor = Color.parseColor("#EF4444"),
+            outerColor = Color.WHITE,
+            sizePx = 56,
+            innerRatio = 0.45f
+        )
+    }
+
+    private fun buildDestinationSearchSelectedMarkerBitmap(): Bitmap {
+        val width = 90
+        val height = 108
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#EF4444")
+            style = Paint.Style.FILL
+        }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 5f
+        }
+        val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val centerX = width / 2f
+        val circleCenterY = 36f
+        val radius = 29f
+        val tailPath = Path().apply {
+            moveTo(centerX - 20f, 58f)
+            quadTo(centerX, 107f, centerX + 20f, 58f)
+            close()
+        }
+        canvas.drawPath(tailPath, pinPaint)
+        canvas.drawCircle(centerX, circleCenterY, radius, pinPaint)
+        canvas.drawPath(tailPath, strokePaint)
+        canvas.drawCircle(centerX, circleCenterY, radius, strokePaint)
+        canvas.drawCircle(centerX, circleCenterY, 10f, innerPaint)
+        return bitmap
+    }
+
+    private fun buildDestinationSearchCommittedMarkerBitmap(): Bitmap {
+        val width = 96
+        val height = 104
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 62f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val markerText = "🚩"
+        val textWidth = textPaint.measureText(markerText)
+        val baseline = 70f
+        canvas.drawText(markerText, (width - textWidth) / 2f, baseline, textPaint)
+        return bitmap
+    }
+
+    private fun buildRouteDistanceBitmap(text: String): Bitmap {
+        val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1F1A17")
+            textSize = 24f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val paddingHorizontal = 18f
+        val paddingVertical = 11f
+        val fontMetrics = textPaint.fontMetrics
+        val textWidth = textPaint.measureText(text)
+        val textHeight = fontMetrics.descent - fontMetrics.ascent
+        val width = ceil(textWidth + paddingHorizontal * 2f).toInt()
+        val height = ceil(textHeight + paddingVertical * 2f).toInt()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#F97316")
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        val rect = RectF(1.5f, 1.5f, width - 1.5f, height - 1.5f)
+        canvas.drawRoundRect(rect, 18f, 18f, backgroundPaint)
+        canvas.drawRoundRect(rect, 18f, 18f, borderPaint)
+        val baseline = paddingVertical - fontMetrics.ascent
+        canvas.drawText(text, paddingHorizontal, baseline, textPaint)
+        return bitmap
+    }
+
+    private fun formatRouteDistance(distanceMeters: Int): String {
+        val distanceText = if (distanceMeters < 1000) {
+            "${distanceMeters}m"
+        } else {
+            String.format(Locale.KOREA, "%.2fkm", distanceMeters / 1000.0)
+        }
+        return "총 $distanceText"
+    }
+
+    private fun orderDestinationSearchResultsByScreenPosition(
+        results: List<DestinationSearchSuggestion>
+    ): List<DestinationSearchSuggestion> {
+        val map = kakaoMap ?: return results
+        return results.sortedWith(
+            compareBy<DestinationSearchSuggestion> {
+                val point = it.toLocationPointOrNull()
+                val screenPoint = point?.let { location ->
+                    map.toScreenPoint(LatLng.from(location.latitude, location.longitude))
+                }
+                screenPoint?.y ?: Int.MIN_VALUE
+            }.thenBy {
+                val point = it.toLocationPointOrNull()
+                val screenPoint = point?.let { location ->
+                    map.toScreenPoint(LatLng.from(location.latitude, location.longitude))
+                }
+                screenPoint?.x ?: Int.MAX_VALUE
+            }
+        )
+    }
+
+    private fun DestinationSearchSuggestion.destinationSearchKey(): String {
+        return sourceRef?.takeIf { it.isNotBlank() }
+            ?: listOf(
+                displayText,
+                latitude?.toString().orEmpty(),
+                longitude?.toString().orEmpty()
+            ).joinToString("|")
+    }
+
+    private fun DestinationSearchSuggestion.toLocationPointOrNull(): LocationPoint? {
+        val lat = latitude ?: return null
+        val lon = longitude ?: return null
+        if (lat == 0.0 && lon == 0.0) {
+            return null
+        }
+        return LocationPoint(
+            latitude = lat,
+            longitude = lon,
+            name = displayText,
+            address = description
+        )
     }
 
     private fun createFuelPumpBitmap(): Bitmap {
@@ -1026,6 +1591,8 @@ class KakaoMapController(
         private const val STATION_PRICE_GASOLINE_ONLY_ZOOM_LEVEL = 11
         private const val STATION_PRICE_FULL_ZOOM_LEVEL = 13
         private const val CURRENT_LOCATION_RADIUS_METERS = 5000
+        private const val MIN_FREE_ZOOM_LEVEL = 3
+        private const val MAX_FREE_ZOOM_LEVEL = 20
         private val fixedZoomLevels = listOf(11, 12, 13, 15)
     }
 }
