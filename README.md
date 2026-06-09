@@ -8,11 +8,11 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 
 1. 사용자가 현재 위치 기준 찾기 화면에 진입합니다.
 2. 앱이 위치 권한을 확인하고 기기 GPS 좌표를 읽습니다.
-3. 현재 위치 마커와 반경 5km 원을 Kakao 지도에 표시합니다.
+3. 현재 위치 마커와 선택 반경 원을 Kakao 지도에 표시합니다.
 4. 백엔드의 주변 주유소 API를 호출합니다.
 5. 받은 주유소를 브랜드 마커와 유가 말풍선으로 지도에 표시합니다.
 6. 주유소 리스트는 화면 하단의 `최소화` 상태로 시작합니다.
-7. 주유소 리스트에는 임시 유종 드롭다운이 있으며, 헤더 우측 상단에서 저장 없이 비용 계산 기준과 지도/리스트의 유종 라벨까지 바꿀 수 있습니다.
+7. 주유소 리스트에는 임시 유종 드롭다운과 반경 드롭다운이 있으며, 헤더 우측 상단에서 저장 없이 비용 계산 기준과 조회 반경을 바꿀 수 있습니다.
 8. 사용자가 리스트 또는 지도 마커에서 주유소를 선택하면 상세 패널을 엽니다.
 9. 목적지 기준 찾기 화면에서는 상단 검색바를 눌러 전체화면 검색 오버레이를 열고 키보드와 커서를 자동으로 띄웁니다.
 
@@ -25,7 +25,7 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 - 앱 시작 시 위치 권한 확인 및 요청
 - Kakao Maps SDK v2 지도 표시
 - 현재 위치 GPS 자동 수신 및 파란색 현재 위치 마커 표시
-- 현재 위치 기준 반경 5km 윤곽선 표시
+- 현재 위치 기준 선택 반경 윤곽선 표시
 - Retrofit 기반 주변 주유소 조회
 - 브랜드 로고 주유소 마커와 유가 말풍선
 - 사용자가 선택한 유종 가격이 0원이면 해당 주유소는 지도와 리스트에서 제외
@@ -50,7 +50,7 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 현재 위치 화면은 지도가 화면 전체를 채우고, 뒤로가기·줌·GPS·패널 UI가 지도 위에 배치됩니다.
 
 - 화면 진입 시 GPS를 한 번 읽고 주변 주유소를 자동 조회합니다.
-- 주변 조회 반경은 `radiusMeters=5000`입니다.
+- 주변 조회 반경은 주유소 목록의 반경 드롭다운에서 `3km / 5km / 10km` 중 고르며, 기본값은 `5km`입니다.
 - 기본 조회 유종은 보통휘발유, 고급휘발유, 디젤입니다.
 - GPS 버튼은 누르는 즉시 저장된 현재 위치로 지도를 `줌 15`에 맞춘 뒤 GPS를 다시 읽습니다.
 - 새 GPS 좌표를 받으면 해당 위치로 다시 중심을 맞춥니다.
@@ -98,6 +98,7 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 - 리스트 본문은 항목 선택과 세로 스크롤만 담당합니다.
 - `최소화`와 `절반` 상태에서는 배경 스크림이 지도 터치를 가로채지 않습니다.
 - 리스트 또는 상세 패널이 표시되는 동안 `현 위치로 설정` 버튼은 숨깁니다.
+- 리스트가 `전체` 상태일 때 주유소 항목을 선택하면, 선택한 주유소와 지도가 보이도록 리스트를 `절반` 상태로 접고 상세 패널을 엽니다.
 
 ## 검색 결과 페이지 명세
 
@@ -137,7 +138,7 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 ## 지도 마커와 유가 말풍선
 
 - 현재 위치 마커는 파란색 점으로 표시하며 주유소 레이어보다 위에 둡니다.
-- 현재 위치의 5km 원은 지도 바로 위, 모든 주유소 마커보다 아래에 둡니다.
+- 현재 위치의 선택 반경 원은 지도 바로 위, 모든 주유소 마커보다 아래에 둡니다.
 - 주유소 마커는 브랜드별 짧은 투명 PNG 로고를 사용합니다.
 - 리스트 항목에는 브랜드별 전체 로고를 표시합니다.
 - 주유소 마커의 보이는 크기와 클릭 판정 영역은 분리되어 있습니다.
@@ -147,6 +148,12 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 - 보통·고급휘발유나 디젤의 다른 가격은 말풍선보다 상세 패널에서 확인하는 편이 덜 복잡합니다.
 - 마커와 말풍선은 겹쳐도 경쟁으로 숨기지 않습니다.
 - 화면 아래쪽에 있는 주유소가 위에 쌓이도록 카메라 이동 종료 시 화면 Y 좌표 기준으로 순서를 갱신합니다.
+- 줌아웃 때 남기는 상위 5/20/50 주유소는 사용자가 현재 선택한 유종 가격을 우선 기준으로 고릅니다.
+- 주변 조회 응답 후에는 원 중심 기준 동서남북 분포와 반경 밖 좌표 수를 로그로 남겨 백엔드 응답 편향과 프론트 표시 필터를 구분합니다.
+- 백엔드가 선택 반경 밖 좌표를 내려주더라도, 프론트는 현재 위치 좌표 기준 직선거리로 한 번 더 걸러 지도와 리스트에 반경 밖 주유소를 표시하지 않습니다.
+- 위도·경도 범위를 벗어난 비정상 좌표는 거리 계산 전에 제외해 지도 렌더링과 반경 필터에서 앱이 종료되지 않게 합니다.
+- 10km처럼 주유소 수가 많을 때 렌더링 부담을 줄이기 위해 주유소별 반복 좌표 로그는 남기지 않고, 유가 말풍선 스타일은 같은 내용·투명도·크기 조합을 재사용합니다.
+- 10km처럼 결과가 많은 반경에서도 리스트 데이터는 유지하되, Kakao Map SDK 라벨 엔진 안정성을 위해 지도 위 유가 말풍선은 한 번에 최대 80개까지만 렌더링합니다.
 
 ### 줌별 표시 수
 
@@ -159,7 +166,7 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 
 - 줌아웃 구간에서는 선택 유종 가격만 간소화해 표시합니다.
 - 줌 `15` 이상에서도 지도 말풍선은 선택 유종 가격 중심으로 유지하고, 상세 유가는 패널에서 확인합니다.
-- 유가 말풍선은 낮은 줌에서 작고 옅게, 높은 줌에서 크고 선명하게 표시합니다.
+- 유가 말풍선은 표시되는 동안 검은 글씨로 읽기 좋게 유지하고, 줌아웃으로 표시 클래스가 줄어드는 경계에서만 단계적으로 흐려집니다.
 - 말풍선 배경은 흰색을 유지하고 글자와 내용의 표시 강도를 조절합니다.
 
 ## 주유소 상세 패널
@@ -172,6 +179,7 @@ Android 프론트엔드는 Kakao Maps SDK로 지도와 오버레이를 표시하
 - 선택 즉시 목록 데이터를 먼저 표시하고 `GET /api/stations/{stationId}` 응답으로 갱신합니다.
 - 현재 백엔드 응답에서 전화번호가 비어 있으면 임시 문구를 표시합니다.
 - 현재 위치 화면의 비용 계산은 저장된 유종·연비·1회 주유량과 응답 거리로 계산합니다.
+- 현재 위치 화면에서 주유소 경로를 표시할 때는 하단 상세 패널에 가려지지 않도록 경로가 화면 상단 기준 약 25% 지점에 오게 맞춥니다.
 
 ## 백엔드 연동
 
@@ -208,15 +216,19 @@ secrets/kakao_native_app_key.txt
 ```text
 secrets/backend_base_url.txt
   -> app/build.gradle.kts
-  -> BuildConfig.BACKEND_BASE_URL
+  -> build/generated/backendConfig/assets/backend_base_url.txt
+  -> BackendApiConfig.defaultBaseUrl(context)
+  -> BuildConfig.BACKEND_BASE_URL fallback
   -> BackendApiConfig
   -> BackendApiClient
   -> Retrofit StationApiService
 ```
 
 - 로컬 파일이 없으면 `http://10.0.2.2:8080/`을 개발 기본값으로 사용합니다.
-- `backend_base_url.txt`를 바꾸면 다음 debug 또는 release Gradle 빌드가 그 값을 다시 읽어 `BuildConfig.BACKEND_BASE_URL`에 자동 반영합니다.
-- `BackendApiConfig`가 주소를 제공하고, `BackendApiClient`가 URL 끝의 `/`를 정규화한 뒤 Retrofit을 생성합니다.
+- `backend_base_url.txt`를 바꾸면 다음 debug 또는 release Gradle 빌드가 `build/generated/backendConfig/assets/backend_base_url.txt`를 다시 생성합니다.
+- 앱 실행 시 `BackendApiConfig.defaultBaseUrl(context)`가 생성된 asset 값을 우선 읽고, asset을 읽을 수 없으면 `BuildConfig.BACKEND_BASE_URL`로 fallback합니다.
+- Android 앱은 설치된 뒤 PC의 `secrets/` 폴더를 직접 읽을 수 없으므로, Cloudflare Tunnel 주소를 바꾼 뒤에는 Android Studio에서 다시 Run 또는 install 해야 새 주소가 APK에 반영됩니다.
+- `BackendApiClient`가 URL 끝의 `/`를 정규화한 뒤 Retrofit을 생성합니다.
 - 화면 코드는 URL을 직접 조합하지 않고 `BackendStationRepository`를 통해 API를 호출합니다.
 
 ### 사용자 설정 저장
@@ -245,7 +257,7 @@ CurrentLocationActivity
   -> KakaoMapController + StationListAdapter
 ```
 
-1. `CurrentLocationActivity`가 GPS 좌표를 얻고 반경 5km 요청 객체를 만듭니다.
+1. `CurrentLocationActivity`가 GPS 좌표를 얻고 사용자가 고른 반경의 요청 객체를 만듭니다.
 2. `BackendStationRepository`가 Retrofit 호출과 성공·실패 응답 처리를 담당합니다.
 3. Gson이 JSON 응답을 `StationSearchResponse`와 `StationSearchItem`으로 변환합니다.
 4. `StationDisplayMapper`가 백엔드 DTO를 지도와 UI에서 사용하는 `GasStation` 모델로 바꿉니다.
@@ -296,7 +308,7 @@ app/
       DeviceLocationResolver.kt  # 기기 위치 조회
     map/
       KakaoMapConfig.kt          # BuildConfig의 Kakao 키 접근
-      KakaoMapController.kt      # 지도, 카메라, 마커, 말풍선, 5km 원
+      KakaoMapController.kt      # 지도, 카메라, 마커, 말풍선, 선택 반경 원
       model/                     # 지도·화면 독립 모델
     recommendation/              # 추천 계산 로직
     settings/                    # 차량 설정 화면과 저장소 확장 지점

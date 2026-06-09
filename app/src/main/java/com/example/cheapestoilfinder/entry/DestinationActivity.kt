@@ -30,6 +30,7 @@ import com.example.cheapestoilfinder.destination.DestinationSearchRepository
 import com.example.cheapestoilfinder.location.DeviceLocationResolver
 import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
+import com.example.cheapestoilfinder.map.RouteCameraPlacement
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
 import com.example.cheapestoilfinder.station.api.ApiCallback
@@ -64,11 +65,15 @@ class DestinationActivity : Activity() {
     private lateinit var destinationSearchResultsAdapter: DestinationAutocompleteAdapter
     private lateinit var destinationSearchResultsHandleTouchArea: View
     private lateinit var destinationSearchResultsHandle: View
-    private val destinationAutocompleteRepository: DestinationAutocompleteRepository =
-        BackendDestinationAutocompleteRepository.createDefault()
-    private val destinationSearchRepository: DestinationSearchRepository =
-        BackendDestinationSearchRepository.createDefault()
-    private val stationRepository: StationRepository = BackendStationRepository.createDefault()
+    private val destinationAutocompleteRepository: DestinationAutocompleteRepository by lazy {
+        BackendDestinationAutocompleteRepository.createDefault(this)
+    }
+    private val destinationSearchRepository: DestinationSearchRepository by lazy {
+        BackendDestinationSearchRepository.createDefault(this)
+    }
+    private val stationRepository: StationRepository by lazy {
+        BackendStationRepository.createDefault(this)
+    }
     private val userPreferenceManager by lazy { UserPreferenceManager.create(this) }
     private var pendingAutocompleteRunnable: Runnable? = null
     private var autocompleteRequestVersion: Int = 0
@@ -670,7 +675,7 @@ class DestinationActivity : Activity() {
         setDestinationButton.isEnabled = true
         setDestinationButton.visibility = View.GONE
         mapController?.commitDestinationSearchResult(suggestion)
-        mapController?.showRoute(routeInfo)
+        mapController?.showRoute(routeInfo, RouteCameraPlacement.CENTER)
         updateDestinationFloatingControlsPosition()
     }
 

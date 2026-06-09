@@ -1,5 +1,6 @@
 package com.example.cheapestoilfinder.destination
 
+import android.content.Context
 import android.util.Log
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -202,6 +203,10 @@ class BackendDestinationSearchRepository private constructor(
 
         fun createDefault(): BackendDestinationSearchRepository {
             return create(BackendApiConfig.DEFAULT_BASE_URL)
+        }
+
+        fun createDefault(context: Context): BackendDestinationSearchRepository {
+            return create(BackendApiConfig.defaultBaseUrl(context))
         }
     }
 }

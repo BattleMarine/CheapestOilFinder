@@ -21,8 +21,13 @@ interface MapController {
         bottomPaddingPx: Int = 0
     )
     fun selectDestinationSearchResult(result: DestinationSearchSuggestion)
-    fun showRoute(routeInfo: RouteInfo)
+    fun showRoute(routeInfo: RouteInfo, placement: RouteCameraPlacement = RouteCameraPlacement.CENTER)
     fun setOnStationSelectedListener(listener: ((GasStation) -> Unit)?)
     fun setOnDestinationSearchResultSelectedListener(listener: ((DestinationSearchSuggestion) -> Unit)?)
     fun clearMapObjects()
+}
+
+enum class RouteCameraPlacement {
+    CENTER,
+    ABOVE_BOTTOM_SHEET
 }

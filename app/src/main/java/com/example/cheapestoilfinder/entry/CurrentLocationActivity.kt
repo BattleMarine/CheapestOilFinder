@@ -22,6 +22,7 @@ import com.example.cheapestoilfinder.R
 import com.example.cheapestoilfinder.location.DeviceLocationResolver
 import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
+import com.example.cheapestoilfinder.map.RouteCameraPlacement
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
@@ -60,6 +61,7 @@ class CurrentLocationActivity : Activity() {
     private var stationListRecycler: RecyclerView? = null
     private var stationListEmptyView: View? = null
     private var stationListFuelTypeSpinner: Spinner? = null
+    private var stationListRadiusSpinner: Spinner? = null
     private var stationInfoContainer: View? = null
     private var stationInfoSheet: View? = null
     private var stationInfoHeader: View? = null
@@ -95,6 +97,7 @@ class CurrentLocationActivity : Activity() {
     private lateinit var preferenceManager: UserPreferenceManager
     private var userSettings = UserSettings()
     private var temporaryStationListFuelType: UserFuelType? = null
+    private var selectedSearchRadiusMeters: Int = DEFAULT_SEARCH_RADIUS_METERS
     private var lastMinimizedBackPressedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -137,7 +140,7 @@ class CurrentLocationActivity : Activity() {
             }
         }
 
-        stationRepository = BackendStationRepository.createDefault()
+        stationRepository = BackendStationRepository.createDefault(this)
         requestInitialCurrentLocationIfNeeded()
     }
 
@@ -233,6 +236,7 @@ class CurrentLocationActivity : Activity() {
                 Log.i(TAG, "GPS location resolved for current location screen: ${point.latitude}, ${point.longitude}")
                 currentGpsPoint = point
                 val zoomLevel = 15
+                mapController?.setCurrentLocationRadiusMeters(selectedSearchRadiusMeters)
                 mapController?.focusCurrentLocation(point, zoomLevel)
                 if (autoSearchStations) {
                     Log.i(TAG, "Auto-searching nearby stations after GPS resolve")
@@ -251,11 +255,14 @@ class CurrentLocationActivity : Activity() {
     }
 
     private fun loadStationsAround(point: LocationPoint) {
-        Log.i(TAG, "Requesting nearby stations around: ${point.latitude}, ${point.longitude}")
+        Log.i(
+            TAG,
+            "Requesting nearby stations around: latitude=${point.latitude}, longitude=${point.longitude}, radiusMeters=$selectedSearchRadiusMeters"
+        )
         val request = NearbyStationSearchRequest(
             point.latitude,
             point.longitude,
-            5000,
+            selectedSearchRadiusMeters,
             userSettings.refuelAmountLiter,
             userSettings.fuelEfficiencyKmPerLiter,
             UserFuelType.values().map { it.backendFuelType },
@@ -264,15 +271,30 @@ class CurrentLocationActivity : Activity() {
 
         stationRepository?.searchNearbyStations(request, object : ApiCallback<StationSearchResponse> {
             override fun onSuccess(result: StationSearchResponse) {
-                rawNearbyStations = StationDisplayMapper.toGasStations(result)
+                val backendStations = StationDisplayMapper.toGasStations(result)
+                rawNearbyStations = filterStationsInsideSearchRadius(
+                    stations = backendStations,
+                    center = point,
+                    radiusMeters = selectedSearchRadiusMeters
+                )
                 val stations = prepareStationsForCurrentFuelType(rawNearbyStations)
-                Log.i(TAG, "Loaded stations around GPS location: ${stations.size}")
+                Log.i(
+                    TAG,
+                    "Loaded stations around GPS location: backendRaw=${backendStations.size}, radiusFiltered=${rawNearbyStations.size}, visible=${stations.size}, responseRadiusKm=${result.radiusKm}, requestedRadiusMeters=$selectedSearchRadiusMeters"
+                )
+                logStationDistribution("backendRaw", backendStations, point, selectedSearchRadiusMeters)
+                logStationDistribution("radiusFiltered", rawNearbyStations, point, selectedSearchRadiusMeters)
+                logStationDistribution("visible", stations, point, selectedSearchRadiusMeters)
                 mapController?.showStations(stations)
                 showStationList(stations)
             }
 
             override fun onError(error: Throwable) {
-                Log.e(TAG, "Failed to load nearby stations for GPS location", error)
+                Log.e(
+                    TAG,
+                    "Failed to load nearby stations for GPS location. latitude=${point.latitude}, longitude=${point.longitude}, radiusMeters=$selectedSearchRadiusMeters",
+                    error
+                )
                 mapController?.showStations(emptyList())
                 if (loadedStations.isNotEmpty()) {
                     collapseStationList(animated = true)
@@ -340,6 +362,7 @@ class CurrentLocationActivity : Activity() {
         stationListRecycler = findViewById(R.id.station_list_recycler)
         stationListEmptyView = findViewById(R.id.station_list_empty)
         stationListFuelTypeSpinner = findViewById(R.id.spinner_station_list_fuel_type)
+        stationListRadiusSpinner = findViewById(R.id.spinner_station_search_radius)
 
         stationListAdapter = StationListAdapter { station ->
             openStationInfo(station)
@@ -375,6 +398,37 @@ class CurrentLocationActivity : Activity() {
                 temporaryStationListFuelType = selectedFuelType
                 Log.i(TAG, "Station list fuel type changed temporarily to $selectedFuelType")
                 refreshStationsForTemporaryFuelType()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+
+        val radiusAdapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            SEARCH_RADIUS_OPTIONS.map { getString(it.labelResId) }
+        ).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        stationListRadiusSpinner?.adapter = radiusAdapter
+        stationListRadiusSpinner?.setSelection(
+            SEARCH_RADIUS_OPTIONS.indexOfFirst { it.radiusMeters == selectedSearchRadiusMeters }
+                .takeIf { it >= 0 } ?: DEFAULT_SEARCH_RADIUS_INDEX,
+            false
+        )
+        stationListRadiusSpinner?.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val option = SEARCH_RADIUS_OPTIONS.getOrNull(position) ?: return
+                if (selectedSearchRadiusMeters == option.radiusMeters) {
+                    return
+                }
+
+                selectedSearchRadiusMeters = option.radiusMeters
+                Log.i(TAG, "Station search radius changed to ${option.radiusMeters}m")
+                currentGpsPoint?.let { point ->
+                    mapController?.setCurrentLocationRadiusMeters(selectedSearchRadiusMeters)
+                    loadStationsAround(point)
+                }
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
@@ -783,6 +837,9 @@ class CurrentLocationActivity : Activity() {
 
     private fun openStationInfo(station: GasStation) {
         Log.i(TAG, "Opening station info for: ${station.id}")
+        if (stationSheetState == StationSheetState.EXPANDED) {
+            collapseStationList(animated = true)
+        }
         mapController?.focusStation(station.locationPoint, 15)
         showStationInfo(station)
         requestStationDetail(station)
@@ -840,7 +897,7 @@ class CurrentLocationActivity : Activity() {
                         "Route loaded for station ${station.id}: distance=${route?.distanceMeters}, duration=${route?.durationSeconds}"
                     )
                 }
-                mapController?.showRoute(routeInfo)
+                mapController?.showRoute(routeInfo, RouteCameraPlacement.ABOVE_BOTTOM_SHEET)
             }
 
             override fun onError(error: Throwable) {
@@ -1089,6 +1146,38 @@ class CurrentLocationActivity : Activity() {
         return filterStationsForCurrentPreferences(decoratedStations)
     }
 
+    private fun filterStationsInsideSearchRadius(
+        stations: List<GasStation>,
+        center: LocationPoint,
+        radiusMeters: Int
+    ): List<GasStation> {
+        if (!isValidWgs84Coordinate(center)) {
+            Log.w(
+                TAG,
+                "Skipping radius filter because center coordinate is invalid: ${center.latitude},${center.longitude}"
+            )
+            return stations
+        }
+
+        var invalidCoordinateCount = 0
+        val filtered = stations.filter { station ->
+            val point = station.locationPoint
+            if (!isValidWgs84Coordinate(point)) {
+                invalidCoordinateCount++
+                return@filter false
+            }
+            distanceMeters(center, point) <= radiusMeters
+        }
+        val excludedCount = stations.size - filtered.size
+        if (excludedCount > 0) {
+            Log.w(
+                TAG,
+                "Excluded stations outside selected radius: excluded=$excludedCount, invalidCoordinates=$invalidCoordinateCount, total=${stations.size}, radiusMeters=$radiusMeters, center=${center.latitude},${center.longitude}"
+            )
+        }
+        return filtered
+    }
+
     private fun refreshStationsForTemporaryFuelType() {
         if (rawNearbyStations.isEmpty()) {
             return
@@ -1335,13 +1424,65 @@ class CurrentLocationActivity : Activity() {
         }
     }
 
+    private fun logStationDistribution(
+        label: String,
+        stations: List<GasStation>,
+        center: LocationPoint,
+        radiusMeters: Int
+    ) {
+        if (stations.isEmpty()) {
+            Log.i(TAG, "Station distribution [$label]: empty")
+            return
+        }
+
+        var east = 0
+        var west = 0
+        var north = 0
+        var south = 0
+        var outsideRadius = 0
+        var invalidCoordinate = 0
+        stations.forEach { station ->
+            val point = station.locationPoint
+            if (!isValidWgs84Coordinate(point)) {
+                invalidCoordinate++
+                return@forEach
+            }
+            if (point.longitude >= center.longitude) east++ else west++
+            if (point.latitude >= center.latitude) north++ else south++
+            if (isValidWgs84Coordinate(center) && distanceMeters(center, point) > radiusMeters) {
+                outsideRadius++
+            }
+        }
+
+        Log.i(
+            TAG,
+            "Station distribution [$label]: total=${stations.size}, east=$east, west=$west, north=$north, south=$south, outsideRadius=$outsideRadius, invalidCoordinate=$invalidCoordinate, center=${center.latitude},${center.longitude}, radiusMeters=$radiusMeters"
+        )
+    }
+
+    private fun isValidWgs84Coordinate(point: LocationPoint): Boolean {
+        return point.latitude in -90.0..90.0 && point.longitude in -180.0..180.0
+    }
+
     companion object {
         private const val TAG = "CurrentLocationActivity"
         private const val REQUEST_LOCATION_PERMISSION = 2001
         private const val STATION_SHEET_TAP_THRESHOLD_PX = 8f
         private const val MINIMIZED_BACK_EXIT_WINDOW_MS = 2000L
+        private const val DEFAULT_SEARCH_RADIUS_INDEX = 1
+        private const val DEFAULT_SEARCH_RADIUS_METERS = 5000
+        private val SEARCH_RADIUS_OPTIONS = listOf(
+            SearchRadiusOption(R.string.station_list_radius_3km, 3000),
+            SearchRadiusOption(R.string.station_list_radius_5km, 5000),
+            SearchRadiusOption(R.string.station_list_radius_10km, 10000)
+        )
     }
 }
+
+private data class SearchRadiusOption(
+    val labelResId: Int,
+    val radiusMeters: Int
+)
 
 private enum class StationSheetState {
     HIDDEN,

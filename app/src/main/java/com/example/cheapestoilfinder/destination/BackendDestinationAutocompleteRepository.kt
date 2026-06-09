@@ -1,5 +1,6 @@
 package com.example.cheapestoilfinder.destination
 
+import android.content.Context
 import android.util.Log
 import com.example.cheapestoilfinder.destination.api.DestinationApiClient
 import com.example.cheapestoilfinder.destination.api.DestinationAutocompleteResponse
@@ -101,6 +102,10 @@ class BackendDestinationAutocompleteRepository private constructor(
 
         fun createDefault(): BackendDestinationAutocompleteRepository {
             return create(BackendApiConfig.DEFAULT_BASE_URL)
+        }
+
+        fun createDefault(context: Context): BackendDestinationAutocompleteRepository {
+            return create(BackendApiConfig.defaultBaseUrl(context))
         }
     }
 }

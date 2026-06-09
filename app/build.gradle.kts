@@ -26,9 +26,28 @@ val kakaoNativeAppKey = when {
 }
 
 val backendBaseUrlTextFile = rootProject.file("secrets/backend_base_url.txt")
+val defaultBackendBaseUrl = "http://10.0.2.2:8080/"
 val backendBaseUrl = when {
     backendBaseUrlTextFile.exists() -> backendBaseUrlTextFile.readText().trim()
-    else -> "http://10.0.2.2:8080/"
+    else -> defaultBackendBaseUrl
+}
+val generatedBackendConfigAssetsDir = layout.buildDirectory.dir("generated/backendConfig/assets")
+val generateBackendBaseUrlAsset by tasks.registering {
+    val outputFile = generatedBackendConfigAssetsDir.map { it.file("backend_base_url.txt") }
+    inputs.file(backendBaseUrlTextFile)
+        .withPropertyName("backendBaseUrlTextFile")
+        .optional()
+    outputs.file(outputFile)
+
+    doLast {
+        val runtimeBackendBaseUrl = when {
+            backendBaseUrlTextFile.exists() -> backendBaseUrlTextFile.readText().trim()
+            else -> defaultBackendBaseUrl
+        }
+        val assetFile = outputFile.get().asFile
+        assetFile.parentFile.mkdirs()
+        assetFile.writeText(runtimeBackendBaseUrl)
+    }
 }
 
 android {
@@ -97,6 +116,12 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    sourceSets {
+        getByName("main") {
+            assets.srcDir(generatedBackendConfigAssetsDir.get().asFile)
+        }
+    }
 }
 
 kotlin {
@@ -127,4 +152,10 @@ tasks.matching { task ->
     if (backendBaseUrlTextFile.exists()) {
         inputs.file(backendBaseUrlTextFile)
     }
+}
+
+tasks.matching { task ->
+    task.name == "mergeDebugAssets" || task.name == "mergeReleaseAssets"
+}.configureEach {
+    dependsOn(generateBackendBaseUrlAsset)
 }

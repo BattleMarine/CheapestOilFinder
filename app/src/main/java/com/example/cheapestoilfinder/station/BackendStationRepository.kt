@@ -1,5 +1,6 @@
 package com.example.cheapestoilfinder.station
 
+import android.content.Context
 import com.example.cheapestoilfinder.station.api.ApiCallback
 import com.example.cheapestoilfinder.station.api.BackendApiClient
 import com.example.cheapestoilfinder.station.api.BackendApiConfig
@@ -93,6 +94,10 @@ class BackendStationRepository private constructor(
 
         fun createDefault(): BackendStationRepository {
             return create(BackendApiConfig.DEFAULT_BASE_URL)
+        }
+
+        fun createDefault(context: Context): BackendStationRepository {
+            return create(BackendApiConfig.defaultBaseUrl(context))
         }
     }
 }

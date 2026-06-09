@@ -21,6 +21,7 @@ import com.example.cheapestoilfinder.destination.DestinationSearchSuggestion
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
+import com.example.cheapestoilfinder.map.RouteCameraPlacement
 import com.example.cheapestoilfinder.station.BrandLogoResolver
 import com.kakao.vectormap.GestureType
 import com.kakao.vectormap.KakaoMap
@@ -52,6 +53,7 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.asin
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 class KakaoMapController(
@@ -81,6 +83,7 @@ class KakaoMapController(
     private var destinationSearchCommittedLabelStyles: LabelStyles? = null
     private var routeDistanceLabel: Label? = null
     private val stationLabelStylesByResId = mutableMapOf<Int, LabelStyles>()
+    private val stationPriceStylesByKey = mutableMapOf<String, LabelStyles>()
     private val stationLabelsById = mutableMapOf<String, Label>()
     private val stationPriceLabelsById = mutableMapOf<String, Label>()
     private val destinationSearchLabelsByKey = mutableMapOf<String, Label>()
@@ -90,6 +93,7 @@ class KakaoMapController(
     private var lastCurrentLocationPoint: LocationPoint? = null
     private var lastCameraPoint: LocationPoint? = null
     private var lastCameraShowsCurrentLocation: Boolean = false
+    private var currentLocationRadiusMeters: Int = DEFAULT_CURRENT_LOCATION_RADIUS_METERS
     private var renderedRoute: RouteInfo? = null
     private var pendingCameraPoint: LocationPoint? = null
     private var pendingCameraZoomLevel: Int = 15
@@ -156,6 +160,7 @@ class KakaoMapController(
                     routeDistanceLabel = null
                     currentLocationLabelLayer = null
                     stationLabelStylesByResId.clear()
+                    stationPriceStylesByKey.clear()
                     currentLocationLabelStyles = null
                     destinationSearchDefaultLabelStyles = null
                     destinationSearchSelectedLabelStyles = null
@@ -286,6 +291,14 @@ class KakaoMapController(
         applyCameraMove(point, zoomLevel, false)
     }
 
+    fun setCurrentLocationRadiusMeters(radiusMeters: Int) {
+        currentLocationRadiusMeters = radiusMeters
+        val point = lastCurrentLocationPoint ?: return
+        if (screenMode == MapScreenMode.CURRENT_LOCATION) {
+            renderCurrentLocationRadius(point, currentLocationRadiusMeters)
+        }
+    }
+
     fun zoomInFixedStep() {
         adjustFixedZoom(zoomingIn = true)
     }
@@ -306,8 +319,16 @@ class KakaoMapController(
         renderedStations.clear()
         renderedStations.addAll(stations)
         Log.d(TAG, "showStations requested. size=${renderedStations.size}")
-        renderStationOverlaysForZoom(currentZoomLevel)
         fitCurrentLocationAndStations()
+        val safeInitialZoom = if (
+            renderedStations.size > MAX_PRICE_LABELS_RENDERED_AT_ONCE &&
+            currentZoomLevel >= 15
+        ) {
+            13
+        } else {
+            currentZoomLevel
+        }
+        renderStationOverlaysForZoom(safeInitialZoom)
     }
 
     override fun showDestinationSearchResults(
@@ -368,11 +389,11 @@ class KakaoMapController(
         clearRenderedRoute()
     }
 
-    override fun showRoute(routeInfo: RouteInfo) {
+    override fun showRoute(routeInfo: RouteInfo, placement: RouteCameraPlacement) {
         renderedRoute = routeInfo
-        Log.d(TAG, "showRoute requested.")
+        Log.d(TAG, "showRoute requested. placement=$placement")
         renderRoute(routeInfo)
-        fitRoute(routeInfo)
+        fitRoute(routeInfo, placement)
         renderRouteDistanceLabel(routeInfo, parseRoutePolyline(routeInfo.polyline))
     }
 
@@ -562,7 +583,7 @@ class KakaoMapController(
         }
 
         if (showCurrentLocationMarker && screenMode == MapScreenMode.CURRENT_LOCATION) {
-            renderCurrentLocationRadius(point, CURRENT_LOCATION_RADIUS_METERS)
+            renderCurrentLocationRadius(point, currentLocationRadiusMeters)
         }
     }
 
@@ -640,12 +661,10 @@ class KakaoMapController(
         val orderedStations = orderStationsByScreenPosition(stationsToRender)
         val visibleStationIds = orderedStations.mapTo(hashSetOf()) { it.id }
 
-        layer.setVisible(true)
         removeStaleStationLabels(visibleStationIds)
-        Log.d(TAG, "renderStations requested. count=${orderedStations.size}, mode=$markerMode")
+        Log.d(TAG, "renderStations requested. total=${renderedStations.size}, visible=${orderedStations.size}, mode=$markerMode, zoom=$zoomLevel")
         orderedStations.forEachIndexed { index, station ->
             val point = station.locationPoint
-            Log.d(TAG, "renderStation marker: ${station.id} @ ${point.latitude}, ${point.longitude}")
             val stationLogoStyles = getStationLogoStyles(station.brand) ?: return@forEachIndexed
             val stationRank = 1000L + index
             val label = stationLabelsById[station.id] ?: layer.addLabel(
@@ -689,18 +708,17 @@ class KakaoMapController(
         val labelManager = kakaoMap?.labelManager ?: return
 
         if (desiredMode == StationPriceDisplayMode.HIDDEN || desiredOpacity <= 0.01f) {
-            priceLayer.setVisible(false)
             clearRenderedStationPrices()
             Log.d(TAG, "Station price labels hidden at zoom=$zoomLevel")
             return
         }
 
-        priceLayer.setVisible(true)
-        removeStaleStationPriceLabels(stationsToRender.mapTo(hashSetOf()) { it.id })
+        val priceStationsToRender = resolveStationsForPriceLabels(stationsToRender)
+        removeStaleStationPriceLabels(priceStationsToRender.mapTo(hashSetOf()) { it.id })
         val showDiesel = zoomLevel >= 15
-        Log.d(TAG, "Rendering station price labels mode=$desiredMode alpha=$desiredOpacity scale=$desiredScale zoom=$zoomLevel count=${renderedStations.size}")
+        Log.d(TAG, "Rendering station price labels mode=$desiredMode alpha=$desiredOpacity scale=$desiredScale zoom=$zoomLevel visible=${priceStationsToRender.size}, stationVisible=${stationsToRender.size}, total=${renderedStations.size}")
 
-        stationsToRender.forEachIndexed { index, station ->
+        priceStationsToRender.forEachIndexed { index, station ->
             val point = station.locationPoint
             val priceLines = buildFuelPriceLines(station, showDiesel = showDiesel)
             if (priceLines.isEmpty()) {
@@ -708,11 +726,11 @@ class KakaoMapController(
             }
 
             val stationRank = 1000L + index
-            val priceLabelStyles = labelManager.addLabelStyles(
-                LabelStyles.from(
-                    LabelStyle.from(buildFuelPriceBitmap(priceLines, desiredOpacity, desiredScale))
-                        .setAnchorPoint(0.5f, 1.0f)
-                )
+            val priceLabelStyles = getStationPriceLabelStyles(
+                labelManager = labelManager,
+                priceLines = priceLines,
+                opacity = desiredOpacity,
+                scale = desiredScale
             )
             val priceLabel = stationPriceLabelsById[station.id] ?: priceLayer.addLabel(
                 LabelOptions.from(
@@ -731,6 +749,45 @@ class KakaoMapController(
         }
 
         Log.d(TAG, "renderStationPriceLabelsForZoom finished. priceLabels=${stationPriceLabelsById.size}")
+    }
+
+    private fun resolveStationsForPriceLabels(stationsToRender: List<GasStation>): List<GasStation> {
+        if (stationsToRender.size <= MAX_PRICE_LABELS_RENDERED_AT_ONCE) {
+            return stationsToRender
+        }
+
+        return orderStationsByScreenPosition(
+            stationsToRender
+                .sortedWith(stationPriceComparator())
+                .take(MAX_PRICE_LABELS_RENDERED_AT_ONCE)
+        )
+    }
+
+    private fun getStationPriceLabelStyles(
+        labelManager: LabelManager,
+        priceLines: List<String>,
+        opacity: Float,
+        scale: Float
+    ): LabelStyles {
+        val styleKey = buildString {
+            append(priceLines.joinToString("|"))
+            append("#a")
+            append((opacity * 100).roundToInt())
+            append("#s")
+            append((scale * 100).roundToInt())
+        }
+
+        return stationPriceStylesByKey.getOrPut(styleKey) {
+            if (stationPriceStylesByKey.size > MAX_PRICE_STYLE_CACHE_SIZE) {
+                stationPriceStylesByKey.clear()
+            }
+            labelManager.addLabelStyles(
+                LabelStyles.from(
+                    LabelStyle.from(buildFuelPriceBitmap(priceLines, opacity, scale))
+                        .setAnchorPoint(0.5f, 1.0f)
+                )
+            )!!
+        }
     }
 
     private fun renderDestinationSearchResults() {
@@ -1016,13 +1073,17 @@ class KakaoMapController(
         layer.setVisible(true)
     }
 
-    private fun fitRoute(routeInfo: RouteInfo) {
+    private fun fitRoute(routeInfo: RouteInfo, placement: RouteCameraPlacement) {
         val map = kakaoMap ?: return
-        pendingCameraPaddingBottom = 0
-        map.setPadding(0, 0, 0, 0)
+        val bottomPadding = when (placement) {
+            RouteCameraPlacement.CENTER -> 0
+            RouteCameraPlacement.ABOVE_BOTTOM_SHEET -> (mapContainer?.height ?: 0) / 2
+        }
+        pendingCameraPaddingBottom = bottomPadding
+        map.setPadding(0, 0, 0, bottomPadding)
         val points = parseRoutePolyline(routeInfo.polyline)
         if (points.size >= 2) {
-            Log.d(TAG, "fitRoute requested. points=${points.size}")
+            Log.d(TAG, "fitRoute requested. points=${points.size}, placement=$placement, bottomPadding=$bottomPadding")
             map.moveCamera(
                 CameraUpdateFactory.fitMapPoints(
                     points.toTypedArray(),
@@ -1033,7 +1094,7 @@ class KakaoMapController(
             return
         }
 
-        Log.w(TAG, "fitRoute skipped because route polyline is insufficient; fitting origin/destination instead.")
+        Log.w(TAG, "fitRoute skipped because route polyline is insufficient; fitting origin/destination instead. placement=$placement, bottomPadding=$bottomPadding")
         map.moveCamera(
             CameraUpdateFactory.fitMapPoints(
                 arrayOf(
@@ -1144,6 +1205,7 @@ class KakaoMapController(
 
     private fun stationPriceComparator(): Comparator<GasStation> {
         return compareBy<GasStation>(
+            { it.costSummary?.selectedFuelPricePerLiter?.takeIf { price -> price > 0 } ?: Int.MAX_VALUE },
             { it.fuelPrices?.regularGasolineWon?.takeIf { price -> price > 0 } ?: Int.MAX_VALUE },
             { it.pricePerLiter.takeIf { price -> price > 0 } ?: Int.MAX_VALUE },
             { it.distanceMeters }
@@ -1318,21 +1380,20 @@ class KakaoMapController(
     private fun resolvePriceOpacity(zoomLevel: Int, markerMode: StationMarkerDisplayMode): Float {
         return when (markerMode) {
             StationMarkerDisplayMode.TOP_FIVE_ONLY -> when (zoomLevel) {
-                11 -> 0.26f
-                else -> 0.40f
+                11 -> 0.72f
+                else -> 0f
             }
             StationMarkerDisplayMode.TOP_TWENTY -> when (zoomLevel) {
-                12 -> 0.48f
-                else -> 0.64f
+                12 -> 0.84f
+                else -> 0.72f
             }
             StationMarkerDisplayMode.TOP_FIFTY -> when (zoomLevel) {
-                13 -> 0.70f
-                else -> 0.82f
+                13 -> 0.92f
+                else -> 1f
             }
             StationMarkerDisplayMode.ALL -> when {
                 zoomLevel >= 15 -> 1f
-                zoomLevel == 14 -> 0.96f
-                else -> 0.90f
+                else -> 0.96f
             }
         }
     }
@@ -1590,9 +1651,11 @@ class KakaoMapController(
         private const val TAG = "KakaoMapController"
         private const val STATION_PRICE_GASOLINE_ONLY_ZOOM_LEVEL = 11
         private const val STATION_PRICE_FULL_ZOOM_LEVEL = 13
-        private const val CURRENT_LOCATION_RADIUS_METERS = 5000
+        private const val DEFAULT_CURRENT_LOCATION_RADIUS_METERS = 5000
         private const val MIN_FREE_ZOOM_LEVEL = 3
         private const val MAX_FREE_ZOOM_LEVEL = 20
+        private const val MAX_PRICE_STYLE_CACHE_SIZE = 300
+        private const val MAX_PRICE_LABELS_RENDERED_AT_ONCE = 80
         private val fixedZoomLevels = listOf(11, 12, 13, 15)
     }
 }

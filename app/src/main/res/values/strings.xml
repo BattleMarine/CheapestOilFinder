@@ -48,6 +48,9 @@
     <string name="station_list_title">주유소 목록</string>
     <string name="station_list_subtitle">보통휘발유 가격이 낮은 순으로 정렬합니다.</string>
     <string name="station_list_fuel_filter_label">리스트 유종</string>
+    <string name="station_list_radius_3km">3km</string>
+    <string name="station_list_radius_5km">5km</string>
+    <string name="station_list_radius_10km">10km</string>
     <string name="station_list_empty">주변 주유소를 찾지 못했습니다.</string>
     <string name="station_list_distance_label">거리</string>
     <string name="station_brand_logo_content_description">주유소 브랜드 로고</string>
