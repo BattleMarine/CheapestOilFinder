@@ -13,8 +13,10 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import android.os.Handler
@@ -31,6 +33,7 @@ import com.example.cheapestoilfinder.location.DeviceLocationResolver
 import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
 import com.example.cheapestoilfinder.map.RouteCameraPlacement
+import com.example.cheapestoilfinder.map.StationMarkerHighlight
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
@@ -49,9 +52,9 @@ import com.example.cheapestoilfinder.station.dto.StationSearchResponse
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-class DestinationActivity : Activity() {
+open class DestinationActivity : Activity() {
     private val autocompleteHandler = Handler(Looper.getMainLooper())
-    private var mapController: KakaoMapController? = null
+    protected var mapController: KakaoMapController? = null
     private var pendingGpsActionAfterPermission: (() -> Unit)? = null
     private var hasRequestedInitialLocation = false
     private var destinationSearchQuery: String = ""
@@ -66,8 +69,13 @@ class DestinationActivity : Activity() {
     private lateinit var destinationSearchResultsEmptyView: TextView
     private lateinit var destinationSearchResultsCountView: TextView
     private lateinit var setDestinationButton: Button
+    private lateinit var destinationRouteLoadingOverlay: View
     private lateinit var destinationZoomControlsContainer: View
     private lateinit var destinationGpsButton: Button
+    private lateinit var settingsOverlay: View
+    private lateinit var settingsOverlayFuelTypeSpinner: Spinner
+    private lateinit var settingsOverlayFuelEfficiencyEditText: EditText
+    private lateinit var settingsOverlayRefuelAmountEditText: EditText
     private lateinit var destinationSearchResultsAdapter: DestinationAutocompleteAdapter
     private lateinit var destinationSearchResultsHandleTouchArea: View
     private lateinit var destinationSearchResultsHandle: View
@@ -85,10 +93,10 @@ class DestinationActivity : Activity() {
     private val destinationSearchRepository: DestinationSearchRepository by lazy {
         BackendDestinationSearchRepository.createDefault(this)
     }
-    private val stationRepository: StationRepository by lazy {
+    protected val stationRepository: StationRepository by lazy {
         BackendStationRepository.createDefault(this)
     }
-    private val userPreferenceManager by lazy { UserPreferenceManager.create(this) }
+    protected val userPreferenceManager by lazy { UserPreferenceManager.create(this) }
     private var pendingAutocompleteRunnable: Runnable? = null
     private var autocompleteRequestVersion: Int = 0
     private var destinationSearchRequestVersion: Int = 0
@@ -101,7 +109,7 @@ class DestinationActivity : Activity() {
     private var destinationSearchResultsDragStartTranslationY: Float = 0f
     private var destinationSearchResultsSheetState = DestinationResultsSheetState.HIDDEN
     private var cachedDestinationSearchResults: List<DestinationSearchSuggestion> = emptyList()
-    private var currentGpsPoint: LocationPoint? = null
+    protected var currentGpsPoint: LocationPoint? = null
     private var selectedDestinationSuggestion: DestinationSearchSuggestion? = null
     private var selectedDestinationPoint: LocationPoint? = null
     private var isDestinationConfirmed: Boolean = false
@@ -113,13 +121,21 @@ class DestinationActivity : Activity() {
     private var routeRecommendationSheetDragStartY: Float = 0f
     private var routeRecommendationSheetDragStartTranslationY: Float = 0f
     private var routeRecommendationSheetState = DestinationResultsSheetState.HIDDEN
+    private var lastExitBackPressedAt = 0L
+
+    protected open val contentLayoutResId: Int = R.layout.activity_destination
+    protected open val mapContainerViewId: Int = R.id.destination_map_container
+    protected open val mapScreenMode: MapScreenMode = MapScreenMode.DESTINATION_ROUTE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_destination)
+        setContentView(contentLayoutResId)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
-        findViewById<Button>(R.id.button_back).setOnClickListener { finish() }
+        findViewById<Button>(R.id.button_back).setOnClickListener { onBackPressed() }
+        findViewById<Button>(R.id.button_open_settings_overlay).setOnClickListener {
+            openSettingsOverlay()
+        }
         destinationZoomControlsContainer = findViewById(R.id.destination_zoom_controls_container)
         destinationGpsButton = findViewById(R.id.button_destination_gps)
         destinationGpsButton.setOnClickListener {
@@ -136,6 +152,7 @@ class DestinationActivity : Activity() {
         }
 
         destinationSearchOverlay = findViewById(R.id.destination_search_overlay)
+        initializeSettingsOverlay()
         destinationSearchInput = findViewById(R.id.edittext_destination_search)
         destinationAutocompleteRecycler = findViewById(R.id.recycler_destination_autocomplete)
         destinationAutocompleteEmptyView = findViewById(R.id.text_destination_search_empty)
@@ -150,6 +167,7 @@ class DestinationActivity : Activity() {
         destinationSearchResultsEmptyView = findViewById(R.id.destination_search_results_empty)
         destinationSearchResultsCountView = findViewById(R.id.destination_search_results_count)
         setDestinationButton = findViewById(R.id.button_set_destination)
+        destinationRouteLoadingOverlay = findViewById(R.id.destination_route_loading_overlay)
         setDestinationButton.visibility = View.GONE
         setDestinationButton.setOnClickListener {
             setSelectedDestinationAndDrawRoute()
@@ -214,8 +232,8 @@ class DestinationActivity : Activity() {
         })
 
         mapController = KakaoMapController(
-            R.id.destination_map_container,
-            MapScreenMode.DESTINATION_ROUTE
+            mapContainerViewId,
+            mapScreenMode
         ).also {
             it.bind(this)
             it.setOnDestinationSearchResultSelectedListener { suggestion ->
@@ -246,22 +264,141 @@ class DestinationActivity : Activity() {
     }
 
     override fun onBackPressed() {
+        if (settingsOverlay.visibility == View.VISIBLE) {
+            resetExitBackConfirmation()
+            closeSettingsOverlay()
+            return
+        }
         if (destinationSearchOverlay.visibility == View.VISIBLE) {
+            resetExitBackConfirmation()
             closeDestinationSearchOverlay()
             return
         }
         if (isDestinationConfirmed) {
             if (handleRouteRecommendationBack()) {
+                resetExitBackConfirmation()
                 return
             }
+            resetExitBackConfirmation()
             restoreDestinationBeforeConfirmState()
             return
         }
         if (destinationSearchResultsContainer.visibility == View.VISIBLE) {
+            resetExitBackConfirmation()
             handleDestinationResultsBack()
             return
         }
-        super.onBackPressed()
+        confirmExitBackPressed()
+    }
+
+    protected fun resetExitBackConfirmation() {
+        lastExitBackPressedAt = 0L
+    }
+
+    @Suppress("DEPRECATION")
+    protected fun confirmExitBackPressed() {
+        val now = System.currentTimeMillis()
+        if (now - lastExitBackPressedAt <= EXIT_BACK_PRESS_WINDOW_MS) {
+            lastExitBackPressedAt = 0L
+            super.onBackPressed()
+            return
+        }
+
+        lastExitBackPressedAt = now
+        Toast.makeText(this, R.string.back_to_main_confirm_message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun initializeSettingsOverlay() {
+        settingsOverlay = findViewById(R.id.settings_overlay)
+        settingsOverlay.visibility = View.GONE
+        settingsOverlayFuelTypeSpinner = findViewById(R.id.spinner_settings_overlay_fuel_type)
+        settingsOverlayFuelEfficiencyEditText = findViewById(R.id.edit_settings_overlay_fuel_efficiency)
+        settingsOverlayRefuelAmountEditText = findViewById(R.id.edit_settings_overlay_refuel_amount)
+
+        val labels = UserFuelType.spinnerLabels(this)
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
+            setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        }
+        settingsOverlayFuelTypeSpinner.adapter = adapter
+
+        findViewById<Button>(R.id.button_settings_overlay_close).setOnClickListener {
+            closeSettingsOverlay()
+        }
+        findViewById<Button>(R.id.button_settings_overlay_save).setOnClickListener {
+            saveSettingsFromOverlay()
+        }
+    }
+
+    private fun openSettingsOverlay() {
+        populateSettingsOverlay()
+        settingsOverlay.visibility = View.VISIBLE
+        settingsOverlay.bringToFront()
+        settingsOverlay.elevation = SETTINGS_OVERLAY_ELEVATION
+    }
+
+    private fun closeSettingsOverlay() {
+        settingsOverlay.visibility = View.GONE
+        clearSettingsOverlayErrors()
+    }
+
+    private fun populateSettingsOverlay() {
+        val settings = userPreferenceManager.loadSettings()
+        settingsOverlayFuelTypeSpinner.setSelection(UserFuelType.spinnerIndexFor(settings.fuelType))
+        settingsOverlayFuelEfficiencyEditText.setText(formatSettingsDouble(settings.fuelEfficiencyKmPerLiter))
+        settingsOverlayRefuelAmountEditText.setText(formatSettingsDouble(settings.refuelAmountLiter))
+        clearSettingsOverlayErrors()
+    }
+
+    private fun saveSettingsFromOverlay() {
+        clearSettingsOverlayErrors()
+
+        val selectedFuelType = UserFuelType.fromSpinnerIndex(settingsOverlayFuelTypeSpinner.selectedItemPosition)
+        val fuelEfficiency = settingsOverlayFuelEfficiencyEditText.text
+            ?.toString()
+            ?.trim()
+            ?.toDoubleOrNull()
+        val refuelAmount = settingsOverlayRefuelAmountEditText.text
+            ?.toString()
+            ?.trim()
+            ?.toDoubleOrNull()
+
+        var isValid = true
+        if (settingsOverlayFuelTypeSpinner.selectedItemPosition !in 0 until UserFuelType.spinnerLabels(this).size) {
+            Toast.makeText(this, R.string.settings_validation_fuel_type_required, Toast.LENGTH_SHORT).show()
+            isValid = false
+        }
+        if (fuelEfficiency == null || fuelEfficiency <= 0.0) {
+            settingsOverlayFuelEfficiencyEditText.error = getString(R.string.settings_validation_efficiency_positive)
+            isValid = false
+        }
+        if (refuelAmount == null || refuelAmount <= 0.0) {
+            settingsOverlayRefuelAmountEditText.error = getString(R.string.settings_validation_refuel_positive)
+            isValid = false
+        }
+        if (!isValid) {
+            return
+        }
+
+        userPreferenceManager.saveSettings(
+            fuelType = selectedFuelType,
+            fuelEfficiencyKmPerLiter = fuelEfficiency ?: UserPreferenceManager.DEFAULT_FUEL_EFFICIENCY_KM_PER_LITER,
+            refuelAmountLiter = refuelAmount ?: UserPreferenceManager.DEFAULT_REFUEL_AMOUNT_LITER
+        )
+        Toast.makeText(this, R.string.settings_saved_message, Toast.LENGTH_SHORT).show()
+        closeSettingsOverlay()
+    }
+
+    private fun clearSettingsOverlayErrors() {
+        settingsOverlayFuelEfficiencyEditText.error = null
+        settingsOverlayRefuelAmountEditText.error = null
+    }
+
+    private fun formatSettingsDouble(value: Double): String {
+        return if (value % 1.0 == 0.0) {
+            value.toInt().toString()
+        } else {
+            value.toString()
+        }
     }
 
     private fun requestInitialCurrentLocationIfNeeded() {
@@ -273,7 +410,7 @@ class DestinationActivity : Activity() {
         refreshCurrentLocationFromGps()
     }
 
-    private fun refreshCurrentLocationFromGps() {
+    protected fun refreshCurrentLocationFromGps() {
         if (hasLocationPermission()) {
             resolveAndShowCurrentLocation()
             return
@@ -298,12 +435,12 @@ class DestinationActivity : Activity() {
         )
     }
 
-    private fun updateDestinationMapToCurrentLocation(point: LocationPoint) {
+    protected open fun updateDestinationMapToCurrentLocation(point: LocationPoint) {
         currentGpsPoint = point
         mapController?.focusCurrentLocation(point, 15)
     }
 
-    private fun openDestinationSearchOverlay() {
+    protected open fun openDestinationSearchOverlay() {
         destinationSearchOverlay.visibility = View.VISIBLE
         destinationSearchOverlay.bringToFront()
         destinationSearchOverlay.elevation = SEARCH_OVERLAY_ELEVATION
@@ -317,7 +454,7 @@ class DestinationActivity : Activity() {
         Log.d(TAG, "Destination search overlay opened. query=$destinationSearchQuery")
     }
 
-    private fun closeDestinationSearchOverlay() {
+    protected open fun closeDestinationSearchOverlay(restoreMapAfterClose: Boolean = true) {
         destinationSearchOverlay.visibility = View.GONE
         destinationAutocompleteAdapter.submitList(emptyList())
         destinationAutocompleteEmptyView.visibility = View.GONE
@@ -327,7 +464,12 @@ class DestinationActivity : Activity() {
         val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(destinationSearchInput.windowToken, 0)
         destinationSearchInput.clearFocus()
+        if (restoreMapAfterClose) {
+            onDestinationSearchOverlayClosed()
+        }
     }
+
+    protected open fun onDestinationSearchOverlayClosed() = Unit
 
     private fun submitDestinationSearch() {
         val query = destinationSearchInput.text?.toString().orEmpty().trim()
@@ -355,7 +497,7 @@ class DestinationActivity : Activity() {
                 destinationAutocompleteEmptyView.visibility = if (suggestions.isEmpty()) View.VISIBLE else View.GONE
                 cachedDestinationSearchResults = suggestions
                 val coordinateCount = suggestions.count { it.latitude != null && it.longitude != null }
-                closeDestinationSearchOverlay()
+                closeDestinationSearchOverlay(restoreMapAfterClose = false)
                 showDestinationSearchResultsPanel(suggestions)
                 Log.d(TAG, "Destination search results updated. query='$query' size=${suggestions.size}, coordinateCount=$coordinateCount")
             }
@@ -613,8 +755,11 @@ class DestinationActivity : Activity() {
         setDestinationButton.translationY = desiredButtonBottom - currentButtonBottom
     }
 
-    private fun updateDestinationFloatingControlsPosition() {
+    protected fun updateDestinationFloatingControlsPosition() {
         if (destinationSearchResultsSheetState == DestinationResultsSheetState.EXPANDED) {
+            return
+        }
+        if (routeRecommendationSheetState == DestinationResultsSheetState.EXPANDED) {
             return
         }
 
@@ -624,19 +769,21 @@ class DestinationActivity : Activity() {
             return
         }
 
-        val targetTranslationY = when (destinationSearchResultsSheetState) {
-            DestinationResultsSheetState.MINIMIZED,
-            DestinationResultsSheetState.COLLAPSED -> calculateFloatingControlsTranslation(
+        val activeSheetTop = when {
+            destinationSearchResultsSheetState == DestinationResultsSheetState.MINIMIZED ||
+                destinationSearchResultsSheetState == DestinationResultsSheetState.COLLAPSED ->
                 destinationSearchResultsSheet.translationY
-            )
-            DestinationResultsSheetState.HIDDEN -> 0f
-            DestinationResultsSheetState.EXPANDED -> return
+            routeRecommendationSheetState == DestinationResultsSheetState.MINIMIZED ||
+                routeRecommendationSheetState == DestinationResultsSheetState.COLLAPSED ->
+                routeRecommendationSheet.translationY
+            else -> null
         }
+        val targetTranslationY = activeSheetTop?.let { calculateFloatingControlsTranslation(it) } ?: 0f
 
         setDestinationFloatingControlsTranslation(targetTranslationY, animated = false)
     }
 
-    private fun updateDestinationFloatingControlsPositionForSheetTop(
+    protected fun updateDestinationFloatingControlsPositionForSheetTop(
         sheetTop: Float,
         animated: Boolean,
         durationMillis: Long
@@ -721,6 +868,7 @@ class DestinationActivity : Activity() {
         )
 
         setDestinationButton.isEnabled = false
+        showDestinationRouteLoading()
         stationRepository.searchRouteStations(request, object : ApiCallback<StationSearchResponse> {
             override fun onSuccess(result: StationSearchResponse) {
                 val route = result.route
@@ -738,6 +886,7 @@ class DestinationActivity : Activity() {
                     StationDisplayMapper.toGasStations(result),
                     routeInfo
                 ).take(5)
+                hideDestinationRouteLoading()
                 enterDestinationConfirmedMode(suggestion, routeInfo, recommendedStations)
                 Log.i(
                     TAG,
@@ -746,11 +895,21 @@ class DestinationActivity : Activity() {
             }
 
             override fun onError(error: Throwable) {
+                hideDestinationRouteLoading()
                 setDestinationButton.isEnabled = true
                 Log.w(TAG, "Failed to load destination route.", error)
                 Toast.makeText(this@DestinationActivity, "목적지 경로를 불러오지 못했습니다.", Toast.LENGTH_SHORT).show()
             }
         })
+    }
+
+    private fun showDestinationRouteLoading() {
+        destinationRouteLoadingOverlay.visibility = View.VISIBLE
+        destinationRouteLoadingOverlay.bringToFront()
+    }
+
+    private fun hideDestinationRouteLoading() {
+        destinationRouteLoadingOverlay.visibility = View.GONE
     }
 
     private fun enterDestinationConfirmedMode(
@@ -779,6 +938,7 @@ class DestinationActivity : Activity() {
         confirmedBaseRouteInfo = null
         mapController?.clearRoute()
         mapController?.clearDetourRoute()
+        mapController?.highlightSelectedStation(null)
         mapController?.showRouteRecommendedStations(emptyList())
         mapController?.restoreDestinationSearchResults(cachedDestinationSearchResults, selectedSuggestion)
         hideRouteRecommendationPanel()
@@ -827,6 +987,7 @@ class DestinationActivity : Activity() {
         routeRecommendationRecycler.visibility = View.GONE
         routeRecommendationSheet.translationY = destinationSearchResultsSheetHeightPx.toFloat()
         routeRecommendationSheetState = DestinationResultsSheetState.HIDDEN
+        updateDestinationFloatingControlsPosition()
     }
 
     private fun expandRouteRecommendationPanel() {
@@ -854,6 +1015,7 @@ class DestinationActivity : Activity() {
         routeRecommendationSheet.animate().cancel()
         routeRecommendationSheetState = DestinationResultsSheetState.COLLAPSED
         val target = routeRecommendationSheetCollapsedTranslationY
+        updateDestinationFloatingControlsPositionForSheetTop(target, animated, 220L)
         if (animated) {
             routeRecommendationSheet.animate()
                 .translationY(target)
@@ -864,7 +1026,7 @@ class DestinationActivity : Activity() {
         }
     }
 
-    private fun minimizeRouteRecommendationPanel(animated: Boolean) {
+    protected fun minimizeRouteRecommendationPanel(animated: Boolean) {
         if (routeRecommendationSheetState == DestinationResultsSheetState.HIDDEN) {
             return
         }
@@ -872,6 +1034,7 @@ class DestinationActivity : Activity() {
         routeRecommendationSheet.animate().cancel()
         routeRecommendationSheetState = DestinationResultsSheetState.MINIMIZED
         val target = routeRecommendationSheetMinimizedTranslationY
+        updateDestinationFloatingControlsPositionForSheetTop(target, animated, 180L)
         if (animated) {
             routeRecommendationSheet.animate()
                 .translationY(target)
@@ -926,9 +1089,16 @@ class DestinationActivity : Activity() {
                     DestinationResultsSheetState.MINIMIZED -> routeRecommendationSheetCollapsedTranslationY to routeRecommendationSheetMinimizedTranslationY
                     DestinationResultsSheetState.HIDDEN -> return false
                 }
-                routeRecommendationSheet.translationY =
-                    (routeRecommendationSheetDragStartTranslationY + delta)
-                        .coerceIn(minTranslation, maxTranslation)
+                val nextTranslation = (routeRecommendationSheetDragStartTranslationY + delta)
+                    .coerceIn(minTranslation, maxTranslation)
+                routeRecommendationSheet.translationY = nextTranslation
+                if (nextTranslation >= routeRecommendationSheetCollapsedTranslationY) {
+                    updateDestinationFloatingControlsPositionForSheetTop(
+                        nextTranslation,
+                        animated = false,
+                        durationMillis = 0L
+                    )
+                }
                 return true
             }
             MotionEvent.ACTION_UP,
@@ -976,7 +1146,7 @@ class DestinationActivity : Activity() {
         }
     }
 
-    private fun showDetourRouteForStation(station: GasStation) {
+    protected open fun showDetourRouteForStation(station: GasStation) {
         if (!isDestinationConfirmed) {
             return
         }
@@ -998,8 +1168,14 @@ class DestinationActivity : Activity() {
             polyline = detourPolyline
         )
         val extraDistanceMeters = station.routeExtraDistanceMeters
-            ?: (detour.distanceMeters - baseRoute.distanceMeters).takeIf { it > 0 }
-        mapController?.showDetourRoute(detourRouteInfo, extraDistanceMeters)
+            ?: (detour.distanceMeters - baseRoute.distanceMeters).takeIf { it >= 0 }
+        mapController?.highlightSelectedStation(station.id, StationMarkerHighlight.ROUTE_RECOMMENDATION)
+        mapController?.showDetourRoute(detourRouteInfo, extraDistanceMeters, station.locationPoint)
+        mapController?.fitRouteWithWaypoints(
+            detourRouteInfo,
+            listOf(station.locationPoint),
+            RouteCameraPlacement.CENTER
+        )
         Log.d(TAG, "Detour route selected: station=${station.id}, extraDistance=$extraDistanceMeters")
     }
 
@@ -1018,7 +1194,7 @@ class DestinationActivity : Activity() {
                 val detourDistanceMeters = station.routeExtraDistanceMeters
                     ?: station.detourRoute?.distanceMeters
                         ?.minus(baseRouteInfo.distanceMeters)
-                        ?.takeIf { it > 0 }
+                        ?.takeIf { it >= 0 }
                 val effectiveDistanceMeters = detourDistanceMeters ?: station.distanceMeters.takeIf { it > 0 }
                 val moveCost = CostCalculator.calculateMoveCost(
                     effectiveDistanceMeters,
@@ -1103,6 +1279,7 @@ class DestinationActivity : Activity() {
                 selectedDestinationSuggestion = null
                 selectedDestinationPoint = null
                 setDestinationButton.visibility = View.GONE
+                onDestinationSearchResultsHidden()
                 return
             }
 
@@ -1122,6 +1299,7 @@ class DestinationActivity : Activity() {
                     selectedDestinationPoint = null
                     setDestinationButton.visibility = View.GONE
                     updateDestinationFloatingControlsPosition()
+                    onDestinationSearchResultsHidden()
                 }
                 .start()
         } else {
@@ -1136,8 +1314,11 @@ class DestinationActivity : Activity() {
             selectedDestinationPoint = null
             setDestinationButton.visibility = View.GONE
             updateDestinationFloatingControlsPosition()
+            onDestinationSearchResultsHidden()
         }
     }
+
+    protected open fun onDestinationSearchResultsHidden() = Unit
 
     private fun expandDestinationSearchResultsPanel() {
         if (destinationSearchResultsSheetState == DestinationResultsSheetState.HIDDEN) {
@@ -1338,6 +1519,8 @@ class DestinationActivity : Activity() {
         private const val REQUEST_LOCATION_PERMISSION = 2002
         private const val AUTOCOMPLETE_DEBOUNCE_MILLIS = 450L
         private const val SEARCH_OVERLAY_ELEVATION = 48f
+        private const val SETTINGS_OVERLAY_ELEVATION = 64f
+        private const val EXIT_BACK_PRESS_WINDOW_MS = 2000L
     }
 }
 

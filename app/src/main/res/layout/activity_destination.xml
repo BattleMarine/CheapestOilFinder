@@ -66,7 +66,7 @@
         <LinearLayout
             android:id="@+id/destination_search_bar"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="52dp"
             android:layout_marginStart="12dp"
             android:layout_weight="1"
             android:background="@drawable/bg_destination_search_bar"
@@ -92,6 +92,19 @@
                 android:textColor="#6C5E53"
                 android:textSize="15sp" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/button_open_settings_overlay"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_overlay_circle_button"
+            android:contentDescription="@string/settings_overlay_open"
+            android:padding="0dp"
+            android:text="@string/settings_overlay_icon"
+            android:textAllCaps="false"
+            android:textColor="#2F2A27"
+            android:textSize="20sp" />
     </LinearLayout>
 
     <LinearLayout
@@ -162,6 +175,52 @@
         android:textColor="#FFFFFF"
         android:textSize="18sp"
         android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/destination_route_loading_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#33000000"
+        android:clickable="true"
+        android:elevation="42dp"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_destination_search_bar"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="28dp"
+            android:paddingVertical="24dp">
+
+            <ProgressBar
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:indeterminate="true"
+                android:indeterminateTint="#2563EB" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/destination_route_loading_title"
+                android:textColor="#1F1A17"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="240dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="@string/destination_route_loading_body"
+                android:textColor="#6C5E53"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </FrameLayout>
 
     <LinearLayout
         android:id="@+id/destination_search_overlay"
@@ -281,6 +340,492 @@
                 android:visibility="gone" />
         </FrameLayout>
     </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/settings_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFF8F1"
+        android:clickable="true"
+        android:elevation="64dp"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/button_settings_overlay_close"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:background="@drawable/bg_overlay_circle_button"
+                        android:contentDescription="@string/back_button"
+                        android:padding="0dp"
+                        android:text="@string/back_button_icon"
+                        android:textAllCaps="false"
+                        android:textColor="#2F2A27"
+                        android:textSize="18sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:text="@string/settings_title"
+                        android:textColor="#1F1A17"
+                        android:textSize="26sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/settings_overlay_subtitle"
+                    android:textColor="#5F5147"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:text="@string/settings_fuel_type_label"
+                    android:textColor="#3E3834"
+                    android:textStyle="bold" />
+
+                <Spinner
+                    android:id="@+id/spinner_settings_overlay_fuel_type"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:spinnerMode="dropdown" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/settings_efficiency_label"
+                    android:textColor="#3E3834"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/edit_settings_overlay_fuel_efficiency"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/settings_placeholder_efficiency"
+                    android:inputType="numberDecimal"
+                    android:padding="14dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/settings_fuel_amount_label"
+                    android:textColor="#3E3834"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/edit_settings_overlay_refuel_amount"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/settings_placeholder_fuel_amount"
+                    android:inputType="numberDecimal"
+                    android:padding="14dp" />
+
+                <Button
+                    android:id="@+id/button_settings_overlay_save"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:backgroundTint="#C96A18"
+                    android:paddingVertical="14dp"
+                    android:text="@string/settings_save_button"
+                    android:textAllCaps="false"
+                    android:textColor="#FFFFFF"
+                    android:textSize="16sp" />
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/integrated_nearby_station_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:elevation="15dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/integrated_nearby_station_sheet"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_station_sheet"
+            android:orientation="vertical"
+            android:paddingTop="10dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="14dp">
+
+                <FrameLayout
+                    android:id="@+id/integrated_nearby_station_drag_handle_touch_area"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp">
+
+                    <View
+                        android:id="@+id/integrated_nearby_station_drag_handle"
+                        android:layout_width="96dp"
+                        android:layout_height="6dp"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_station_sheet_handle" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="20dp">
+
+                    <TextView
+                        android:id="@+id/integrated_nearby_station_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/integrated_nearby_station_title"
+                        android:textColor="#1F1A17"
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:gravity="end|center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/integrated_nearby_station_count"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:textColor="#6C5E53"
+                            android:textSize="13sp" />
+
+                        <Spinner
+                            android:id="@+id/spinner_integrated_nearby_fuel_type"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="136dp"
+                            android:spinnerMode="dropdown" />
+
+                        <Spinner
+                            android:id="@+id/spinner_integrated_nearby_radius"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:minWidth="96dp"
+                            android:spinnerMode="dropdown" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/integrated_nearby_station_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                android:paddingHorizontal="24dp"
+                android:text="@string/integrated_nearby_station_empty"
+                android:textColor="#6C5E53"
+                android:textSize="15sp"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler_integrated_nearby_stations"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="12dp"
+                android:layout_weight="1"
+                android:paddingHorizontal="16dp"
+                android:paddingBottom="20dp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/station_info_scrim_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:elevation="18dp"
+        android:visibility="gone">
+
+        <View
+            android:id="@+id/station_info_scrim"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@android:color/transparent" />
+
+        <LinearLayout
+            android:id="@+id/station_info_sheet"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="bottom"
+            android:background="@drawable/bg_station_sheet"
+            android:orientation="vertical"
+            android:paddingTop="10dp">
+
+            <LinearLayout
+                android:id="@+id/station_info_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="20dp"
+                android:paddingBottom="14dp">
+
+                <View
+                    android:id="@+id/station_info_drag_handle"
+                    android:layout_width="44dp"
+                    android:layout_height="4dp"
+                    android:layout_gravity="center_horizontal"
+                    android:background="@drawable/bg_station_sheet_handle" />
+
+                <TextView
+                    android:id="@+id/station_info_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/station_info_title"
+                    android:textColor="#1F1A17"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/station_info_subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/station_info_subtitle_placeholder"
+                    android:textColor="#6C5E53"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="20dp"
+                android:layout_weight="1"
+                android:fillViewport="true">
+
+                <LinearLayout
+                    android:id="@+id/station_info_body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="20dp"
+                    android:paddingBottom="28dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_station_list_item"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="16dp">
+
+                        <ImageView
+                            android:id="@+id/station_info_brand_logo"
+                            android:layout_width="72dp"
+                            android:layout_height="72dp"
+                            android:contentDescription="@string/station_brand_logo_content_description"
+                            android:scaleType="centerInside" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="14dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/station_info_name_label"
+                                android:textColor="#8A7C71"
+                                android:textSize="12sp" />
+
+                            <TextView
+                                android:id="@+id/station_info_name_value"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:textColor="#1F1A17"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/button_station_info_call"
+                            android:layout_width="58dp"
+                            android:layout_height="46dp"
+                            android:background="@drawable/bg_external_map_button"
+                            android:contentDescription="@string/station_info_call_button"
+                            android:padding="0dp"
+                            android:text="☎️"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            android:id="@+id/button_station_info_open_map"
+                            android:layout_width="0dp"
+                            android:layout_height="46dp"
+                            android:layout_marginStart="10dp"
+                            android:layout_weight="1"
+                            android:background="@drawable/bg_external_map_button"
+                            android:contentDescription="@string/station_info_open_map_button"
+                            android:text="@string/station_info_open_map_button"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:background="@drawable/bg_station_list_item"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/station_info_address_label"
+                            android:textColor="#8A7C71"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/station_info_address_value"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="#1F1A17"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="@string/station_info_phone_label"
+                            android:textColor="#8A7C71"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/station_info_phone_value"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="#1F1A17"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:background="@drawable/bg_station_list_item"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/station_info_fuel_label"
+                            android:textColor="#8A7C71"
+                            android:textSize="12sp" />
+
+                        <LinearLayout
+                            android:id="@+id/station_info_fuel_container"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:background="@drawable/bg_station_list_item"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/station_info_route_distance_label"
+                            android:textColor="#8A7C71"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/station_info_route_distance_value"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="#1F1A17"
+                            android:textSize="15sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:background="@drawable/bg_station_list_item"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/station_info_cost_label"
+                            android:textColor="#8A7C71"
+                            android:textSize="12sp" />
+
+                        <LinearLayout
+                            android:id="@+id/station_info_cost_container"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:orientation="vertical" />
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+        </LinearLayout>
+    </FrameLayout>
 
     <FrameLayout
         android:id="@+id/destination_search_results_container"

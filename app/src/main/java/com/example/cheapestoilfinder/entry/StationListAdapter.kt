@@ -84,7 +84,7 @@ class StationListAdapter(
         }
 
         private fun formatCostText(cost: Int?): String {
-            return cost?.takeIf { it > 0 }?.let { "약 ${formatWon(it)}" }
+            return cost?.takeIf { it >= 0 }?.let { "약 ${formatWon(it)}" }
                 ?: itemView.context.getString(R.string.station_info_cost_unavailable)
         }
 

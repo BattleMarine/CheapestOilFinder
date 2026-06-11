@@ -44,7 +44,19 @@ class BackendStationRepository private constructor(
         request: RouteStationSearchRequest,
         callback: ApiCallback<StationSearchResponse>
     ) {
-        enqueue(apiService.searchRouteStations(request), callback)
+        val call = apiService.searchRouteStations(request)
+        android.util.Log.d(
+            TAG,
+            "searchRouteStations request url=${call.request().url}, " +
+                "origin=(${request.originLatitude}, ${request.originLongitude}), " +
+                "destination=(${request.destinationLatitude}, ${request.destinationLongitude}), " +
+                "radiusKm=${request.radiusKm}, fuelAmountLiters=${request.fuelAmountLiters}, " +
+                "fuelEfficiencyKmPerLiter=${request.fuelEfficiencyKmPerLiter}, " +
+                "fuelTypes=${request.fuelTypes}, sortOrder=${request.sortOrder}, " +
+                "routeResultMode=${request.routeResultMode}, " +
+                "originLabel=${request.originLabel}, destinationLabel=${request.destinationLabel}"
+        )
+        enqueue(call, callback)
     }
 
     override fun getStationDetail(stationId: String, callback: ApiCallback<StationDetailResponse>) {
@@ -54,6 +66,10 @@ class BackendStationRepository private constructor(
     private fun <T> enqueue(call: Call<T>, callback: ApiCallback<T>) {
         call.enqueue(object : Callback<T> {
             override fun onResponse(call: Call<T>, response: Response<T>) {
+                android.util.Log.d(
+                    TAG,
+                    "Backend API response ${response.code()} successful=${response.isSuccessful} for ${call.request().url}"
+                )
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body == null) {
@@ -73,6 +89,11 @@ class BackendStationRepository private constructor(
             }
 
             override fun onFailure(call: Call<T>, t: Throwable) {
+                android.util.Log.e(
+                    TAG,
+                    "Backend API failure for ${call.request().url}: ${t.javaClass.name}: ${t.message}",
+                    t
+                )
                 callback.onError(t)
             }
         })

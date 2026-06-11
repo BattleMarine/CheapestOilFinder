@@ -8,7 +8,7 @@ object CostCalculator {
         fuelEfficiencyKmPerLiter: Double,
         fuelPricePerLiter: Int
     ): Int? {
-        if (distanceKm <= 0.0 || fuelEfficiencyKmPerLiter <= 0.0 || fuelPricePerLiter <= 0) {
+        if (distanceKm < 0.0 || fuelEfficiencyKmPerLiter <= 0.0 || fuelPricePerLiter <= 0) {
             return null
         }
 
@@ -21,7 +21,7 @@ object CostCalculator {
         fuelEfficiencyKmPerLiter: Double,
         fuelPricePerLiter: Int
     ): Int? {
-        if (distanceMeters == null || distanceMeters <= 0) {
+        if (distanceMeters == null || distanceMeters < 0) {
             return null
         }
 

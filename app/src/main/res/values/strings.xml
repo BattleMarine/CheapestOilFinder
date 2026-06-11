@@ -5,7 +5,12 @@
     <string name="home_subtitle">주유소 가격을 비교하고 가장 경제적인 주유소를 찾는 앱입니다.</string>
     <string name="current_location_cta">현재 위치 기준 찾기</string>
     <string name="destination_cta">목적지 기준 찾기</string>
+    <string name="integrated_map_cta">통합 지도에서 찾기</string>
+    <string name="integrated_nearby_station_title">총비용 낮은 주유소</string>
+    <string name="integrated_nearby_station_empty">주변 주유소를 찾지 못했습니다.</string>
     <string name="settings_cta">설정 입력 화면</string>
+    <string name="settings_overlay_open">지도 설정 열기</string>
+    <string name="settings_overlay_icon">⚙️</string>
     <string name="home_helper">각 버튼은 입력 화면과 연결되어 있으며, 다음 단계에서 추천 결과가 연동됩니다.</string>
     <string name="current_location_title">현재 위치 기준 찾기</string>
     <string name="current_location_description">상단 지도 영역에는 추후 지도 SDK 또는 지도 API가 들어가며, 현재는 구조만 배치되어 있습니다.</string>
@@ -19,6 +24,8 @@
     <string name="destination_map_placeholder_title">경로 지도 영역</string>
     <string name="destination_map_placeholder_body">추후 길찾기 결과와 경로상의 주유소 마커를 이 영역에 표시합니다.</string>
     <string name="set_destination_cta">목적지로 설정</string>
+    <string name="destination_route_loading_title">경로를 계산하는 중</string>
+    <string name="destination_route_loading_body">목적지까지의 경로와 주변 추천 주유소를 함께 불러오고 있어요.</string>
     <string name="destination_search_bar_hint">목적지 검색</string>
     <string name="destination_search_overlay_title">목적지 검색</string>
     <string name="destination_search_input_hint">주소, 건물명, 장소명을 입력하세요</string>
@@ -33,6 +40,7 @@
     <string name="search_overlay_close">검색 닫기</string>
     <string name="settings_title">설정 입력</string>
     <string name="settings_subtitle">차량 정보와 기본값을 입력하는 화면입니다.</string>
+    <string name="settings_overlay_subtitle">유종, 차량 연비, 1회 주유량을 조정합니다. 저장하면 다음 계산부터 반영됩니다.</string>
     <string name="settings_efficiency_label">차량 연비 (km/L)</string>
     <string name="settings_fuel_amount_label">1회 주유량 (L)</string>
     <string name="settings_fuel_type_label">유종</string>
@@ -59,7 +67,7 @@
     <string name="station_info_title">주유소 정보 페이지</string>
     <string name="station_info_subtitle_placeholder">상세 정보 준비 중</string>
     <string name="station_info_body_placeholder">선택한 주유소의 상세 정보를 추후 표시합니다.</string>
-    <string name="back_to_main_confirm_message">메인화면으로 나가려면 다시 뒤로가기를 누르세요.</string>
+    <string name="back_to_main_confirm_message">종료하시려면 다시 뒤로가기를 눌러주세요.</string>
     <string name="zoom_in_cta">확대</string>
     <string name="zoom_out_cta">축소</string>
     <string name="zoom_in_icon">+</string>
@@ -68,7 +76,7 @@
     <string name="station_info_name_label">상호명</string>
     <string name="station_info_address_label">도로명주소</string>
     <string name="station_info_phone_label">전화번호</string>
-    <string name="station_info_phone_placeholder">010-0000-0000 (임시)</string>
+    <string name="station_info_phone_placeholder">-</string>
     <string name="station_info_fuel_label">유가 정보</string>
     <string name="station_info_route_distance_label">주유소까지 거리</string>
     <string name="station_info_round_trip_label">왕복비용</string>
@@ -91,6 +99,11 @@
     <string name="settings_validation_refuel_positive">1회 주유량은 0보다 커야 합니다.</string>
     <string name="settings_validation_fuel_type_required">연료 종류를 선택해주세요.</string>
     <string name="station_info_cost_label">비용 계산</string>
+    <string name="station_info_open_map_button">외부 지도앱으로 보기</string>
+    <string name="station_info_call_button">전화</string>
+    <string name="station_info_call_no_phone">전화번호 정보가 없습니다.</string>
+    <string name="station_info_open_map_no_app">실행할 수 있는 지도앱을 찾지 못했습니다.</string>
+    <string name="station_info_open_map_invalid_location">주유소 위치 정보가 없어 지도앱을 열 수 없습니다.</string>
     <string name="station_info_selected_fuel_label">선택 유종</string>
     <string name="station_info_selected_fuel_price_label">선택 유종 가격</string>
     <string name="station_info_move_cost_label">이동비용</string>

@@ -12,6 +12,7 @@ import com.example.cheapestoilfinder.settings.SettingsActivity
 
 class MainActivity : Activity() {
     private var pendingActionAfterLocationPermission: (() -> Unit)? = null
+    private var lastExitBackPressedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -19,7 +20,12 @@ class MainActivity : Activity() {
 
         val currentLocationButton = findViewById<Button>(R.id.button_current_location)
         val destinationButton = findViewById<Button>(R.id.button_destination)
+        val integratedMapButton = findViewById<Button>(R.id.button_integrated_map)
         val settingsButton = findViewById<Button>(R.id.button_settings)
+
+        integratedMapButton.setOnClickListener {
+            openIntegratedMapScreen()
+        }
 
         currentLocationButton.setOnClickListener {
             openCurrentLocationScreen()
@@ -50,6 +56,18 @@ class MainActivity : Activity() {
 
         pendingActionAfterLocationPermission = {
             startActivity(Intent(this, CurrentLocationActivity::class.java))
+        }
+        requestLocationPermission()
+    }
+
+    private fun openIntegratedMapScreen() {
+        if (hasLocationPermission()) {
+            startActivity(Intent(this, IntegratedMapActivity::class.java))
+            return
+        }
+
+        pendingActionAfterLocationPermission = {
+            startActivity(Intent(this, IntegratedMapActivity::class.java))
         }
         requestLocationPermission()
     }
@@ -92,7 +110,21 @@ class MainActivity : Activity() {
         pendingActionAfterLocationPermission = null
     }
 
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onBackPressed() {
+        val now = System.currentTimeMillis()
+        if (now - lastExitBackPressedAt <= EXIT_BACK_PRESS_WINDOW_MS) {
+            lastExitBackPressedAt = 0L
+            super.onBackPressed()
+            return
+        }
+
+        lastExitBackPressedAt = now
+        Toast.makeText(this, R.string.back_to_main_confirm_message, Toast.LENGTH_SHORT).show()
+    }
+
     companion object {
         private const val REQUEST_LOCATION_PERMISSION = 1001
+        private const val EXIT_BACK_PRESS_WINDOW_MS = 2000L
     }
 }

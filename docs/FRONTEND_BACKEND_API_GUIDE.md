@@ -83,9 +83,9 @@ Content-Type: application/json
 
 1. 기본 현위치-목적지 경로를 계산합니다.
 2. PostGIS로 경로 주변 주유소를 조회합니다.
-3. `경로 이탈거리 기반 이동비 + 예상 주유비`로 계산한 `estimatedTotalCostWon`이 낮은 주유소 top 5를 고릅니다.
-4. top 5에 대해서만 네이버 Directions 경유지 API를 호출해 현위치-주유소-목적지 경로를 계산합니다.
-5. `경유 경로 거리 - 기본 경로 거리`를 `routeExtraDistanceMeters`로 기록하고, `추가 이동비 + 예상 주유비`로 다시 계산한 `estimatedTotalCostWon`이 낮은 순서로 `stations[]`를 반환합니다.
+3. `estimatedTotalCostWon`이 낮은 후보 5개와 경로에서 가까운 후보 5개의 합집합을 경유 계산 후보로 고릅니다.
+4. 중복을 제거한 경유 계산 후보에 대해서만 네이버 Directions 경유지 API를 호출해 현위치-주유소-목적지 경로를 계산합니다.
+5. `경유 경로 거리 - 기본 경로 거리`를 `routeExtraDistanceMeters`로 기록하고, `추가 이동비 + 예상 주유비`로 다시 계산한 `estimatedTotalCostWon`이 낮은 최종 top 5를 `stations[]`로 반환합니다.
 
 ### 경로만 요청 예시
 
@@ -206,13 +206,22 @@ POST /api/places/search
 Content-Type: application/json
 ```
 
+`searchMode`를 생략하거나 `AUTO`로 보내면 백엔드는 카카오 주소 검색 10개와 키워드 장소 검색 15개를 모두 호출해 합친 결과를 반환합니다. 정확한 도로명주소는 키워드 검색에서 누락될 수 있으므로, 프론트엔드는 기본적으로 `AUTO`를 사용하는 것을 권장합니다.
+
+| `searchMode` | 동작 |
+| --- | --- |
+| `AUTO` 또는 생략 | 주소 검색 10개 + 키워드 장소 검색 15개를 합쳐 최대 25개 반환 |
+| `ADDRESS` | 주소 검색만 호출 |
+| `KEYWORD` | 키워드 장소 검색만 호출 |
+
 ### 예시
 
 ```json
 {
   "query": "관악산",
+  "searchMode": "AUTO",
   "page": 1,
-  "size": 10
+  "size": 25
 }
 ```
 

@@ -23,6 +23,7 @@ import com.example.cheapestoilfinder.location.DeviceLocationResolver
 import com.example.cheapestoilfinder.map.KakaoMapController
 import com.example.cheapestoilfinder.map.MapScreenMode
 import com.example.cheapestoilfinder.map.RouteCameraPlacement
+import com.example.cheapestoilfinder.map.StationMarkerHighlight
 import com.example.cheapestoilfinder.map.model.GasStation
 import com.example.cheapestoilfinder.map.model.LocationPoint
 import com.example.cheapestoilfinder.map.model.RouteInfo
@@ -91,6 +92,7 @@ class CurrentLocationActivity : Activity() {
     private var stationInfoSheetState = StationSheetState.HIDDEN
     private var stationInfoSheetHeightPx = 0
     private var stationInfoSheetCollapsedTranslationY = 0f
+    private var stationInfoSheetMinimizedTranslationY = 0f
     private var stationInfoSheetDragging = false
     private var stationInfoSheetDragStartY = 0f
     private var stationInfoSheetDragStartTranslationY = 0f
@@ -105,7 +107,7 @@ class CurrentLocationActivity : Activity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_current_location)
 
-        findViewById<Button>(R.id.button_back).setOnClickListener { finish() }
+        findViewById<Button>(R.id.button_back).setOnClickListener { onBackPressed() }
         setCurrentLocationButton = findViewById(R.id.button_set_current_location)
         setCurrentLocationButton?.setOnClickListener {
             Log.i(TAG, "Current location set button clicked")
@@ -499,8 +501,13 @@ class CurrentLocationActivity : Activity() {
         stationInfoContainer?.post {
             val sheet = stationInfoSheet ?: return@post
             val targetHeight = resources.displayMetrics.heightPixels
+            val density = resources.displayMetrics.density
+            val minimizedHeight = (density * 96f).roundToInt()
             stationInfoSheetHeightPx = targetHeight
             stationInfoSheetCollapsedTranslationY = targetHeight / 2f
+            stationInfoSheetMinimizedTranslationY = (targetHeight - minimizedHeight)
+                .coerceAtLeast(0)
+                .toFloat()
             sheet.layoutParams = sheet.layoutParams.apply { height = targetHeight }
             sheet.requestLayout()
             sheet.translationY = targetHeight.toFloat()
@@ -519,6 +526,7 @@ class CurrentLocationActivity : Activity() {
 
     private fun showStationInfo(station: GasStation) {
         selectedStation = station
+        mapController?.highlightSelectedStation(station.id, StationMarkerHighlight.NEARBY)
         renderStationInfo(station)
 
         if (stationInfoSheetHeightPx <= 0) {
@@ -698,7 +706,7 @@ class CurrentLocationActivity : Activity() {
     }
 
     private fun formatCostValue(cost: Int?): String {
-        return cost?.takeIf { it > 0 }?.let { "약 ${formatWon(it)}" }
+        return cost?.takeIf { it >= 0 }?.let { "약 ${formatWon(it)}" }
             ?: getString(R.string.station_info_cost_unavailable)
     }
 
@@ -716,6 +724,25 @@ class CurrentLocationActivity : Activity() {
         stationInfoSheetState = StationSheetState.EXPANDED
     }
 
+    private fun minimizeStationInfo(animated: Boolean) {
+        val sheet = stationInfoSheet ?: return
+        if (stationInfoSheetState == StationSheetState.HIDDEN) {
+            return
+        }
+
+        sheet.animate().cancel()
+        stationInfoSheetState = StationSheetState.MINIMIZED
+        stationInfoSheetDragging = false
+        if (animated) {
+            sheet.animate()
+                .translationY(stationInfoSheetMinimizedTranslationY)
+                .setDuration(220L)
+                .start()
+        } else {
+            sheet.translationY = stationInfoSheetMinimizedTranslationY
+        }
+    }
+
     private fun hideStationInfo(animated: Boolean) {
         val sheet = stationInfoSheet ?: return
 
@@ -724,6 +751,10 @@ class CurrentLocationActivity : Activity() {
             stationInfoScrim?.visibility = View.GONE
             stationInfoSheetState = StationSheetState.HIDDEN
             stationInfoSheetDragging = false
+            if (selectedStation != null) {
+                selectedStation = null
+                clearSelectedStationRouteAndHighlight("station info panel hidden")
+            }
             updateCurrentLocationActionsVisibility()
         }
 
@@ -792,8 +823,14 @@ class CurrentLocationActivity : Activity() {
                     return false
                 }
                 val delta = event.rawY - stationInfoSheetDragStartY
+                val (minTranslation, maxTranslation) = when (stationInfoSheetState) {
+                    StationSheetState.EXPANDED -> 0f to stationInfoSheetCollapsedTranslationY
+                    StationSheetState.COLLAPSED -> 0f to stationInfoSheetMinimizedTranslationY
+                    StationSheetState.MINIMIZED -> stationInfoSheetCollapsedTranslationY to stationInfoSheetMinimizedTranslationY
+                    StationSheetState.HIDDEN -> return false
+                }
                 val nextTranslation = (stationInfoSheetDragStartTranslationY + delta)
-                    .coerceIn(0f, stationInfoSheetHeightPx.toFloat())
+                    .coerceIn(minTranslation, maxTranslation)
                 sheet.translationY = nextTranslation
                 return true
             }
@@ -803,21 +840,41 @@ class CurrentLocationActivity : Activity() {
                     return false
                 }
                 stationInfoSheetDragging = false
-                val dragDelta = sheet.translationY - stationInfoSheetDragStartTranslationY
-                val shouldExpand = dragDelta < -12f
-                val shouldClose = dragDelta > (stationInfoSheetHeightPx * 0.28f)
-                if (shouldExpand) {
-                    expandStationInfo()
-                } else if (shouldClose) {
-                    hideStationInfo(animated = true)
+                val dragDelta = event.rawY - stationInfoSheetDragStartY
+                if (kotlin.math.abs(dragDelta) < 24f * resources.displayMetrics.density) {
+                    settleStationInfoPanel()
+                    return true
+                }
+
+                if (dragDelta < 0f) {
+                    when (stationInfoSheetState) {
+                        StationSheetState.MINIMIZED -> collapseStationInfo(animated = true)
+                        StationSheetState.COLLAPSED -> expandStationInfo()
+                        StationSheetState.EXPANDED -> expandStationInfo()
+                        StationSheetState.HIDDEN -> Unit
+                    }
                 } else {
-                    collapseStationInfo(animated = true)
+                    when (stationInfoSheetState) {
+                        StationSheetState.EXPANDED -> collapseStationInfo(animated = true)
+                        StationSheetState.COLLAPSED -> minimizeStationInfo(animated = true)
+                        StationSheetState.MINIMIZED -> minimizeStationInfo(animated = true)
+                        StationSheetState.HIDDEN -> Unit
+                    }
                 }
                 return true
             }
         }
 
         return false
+    }
+
+    private fun settleStationInfoPanel() {
+        when (stationInfoSheetState) {
+            StationSheetState.EXPANDED -> expandStationInfo()
+            StationSheetState.COLLAPSED -> collapseStationInfo(animated = true)
+            StationSheetState.MINIMIZED -> minimizeStationInfo(animated = true)
+            StationSheetState.HIDDEN -> Unit
+        }
     }
 
     private fun showStationList(stations: List<GasStation>) {
@@ -841,6 +898,9 @@ class CurrentLocationActivity : Activity() {
         Log.i(TAG, "Opening station info for: ${station.id}")
         if (stationSheetState == StationSheetState.EXPANDED) {
             collapseStationList(animated = true)
+        }
+        if (selectedStation?.id != station.id) {
+            clearSelectedStationRouteAndHighlight("another station selected")
         }
         mapController?.focusStation(station.locationPoint, 15)
         showStationInfo(station)
@@ -1208,9 +1268,15 @@ class CurrentLocationActivity : Activity() {
     }
 
     private fun clearSelectedStationRouteForRefresh(reason: String) {
+        selectedStation = null
+        clearSelectedStationRouteAndHighlight(reason)
+    }
+
+    private fun clearSelectedStationRouteAndHighlight(reason: String) {
         stationRouteRequestGeneration++
         mapController?.clearRoute()
-        Log.i(TAG, "Cleared selected station route for station list refresh: $reason")
+        mapController?.highlightSelectedStation(null)
+        Log.i(TAG, "Cleared selected station route and highlight: $reason")
     }
 
     private fun syncStationListFuelTypeSpinner() {
@@ -1376,7 +1442,13 @@ class CurrentLocationActivity : Activity() {
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         if (stationInfoSheetState != StationSheetState.HIDDEN) {
-            hideStationInfo(animated = true)
+            lastMinimizedBackPressedAt = 0L
+            when (stationInfoSheetState) {
+                StationSheetState.EXPANDED -> collapseStationInfo(animated = true)
+                StationSheetState.COLLAPSED -> minimizeStationInfo(animated = true)
+                StationSheetState.MINIMIZED -> hideStationInfo(animated = true)
+                StationSheetState.HIDDEN -> Unit
+            }
             return
         }
         when (stationSheetState) {
@@ -1391,20 +1463,26 @@ class CurrentLocationActivity : Activity() {
                 return
             }
             StationSheetState.MINIMIZED -> {
-                val now = System.currentTimeMillis()
-                if (now - lastMinimizedBackPressedAt <= MINIMIZED_BACK_EXIT_WINDOW_MS) {
-                    super.onBackPressed()
-                    return
-                }
-                lastMinimizedBackPressedAt = now
-                Toast.makeText(this, R.string.back_to_main_confirm_message, Toast.LENGTH_SHORT).show()
+                confirmExitBackPressed()
                 return
             }
             StationSheetState.HIDDEN -> {
-                lastMinimizedBackPressedAt = 0L
+                confirmExitBackPressed()
+                return
             }
         }
-        super.onBackPressed()
+    }
+
+    private fun confirmExitBackPressed() {
+        val now = System.currentTimeMillis()
+        if (now - lastMinimizedBackPressedAt <= MINIMIZED_BACK_EXIT_WINDOW_MS) {
+            lastMinimizedBackPressedAt = 0L
+            super.onBackPressed()
+            return
+        }
+
+        lastMinimizedBackPressedAt = now
+        Toast.makeText(this, R.string.back_to_main_confirm_message, Toast.LENGTH_SHORT).show()
     }
 
     private fun updateStationActionsOffset(offsetPx: Float) {
